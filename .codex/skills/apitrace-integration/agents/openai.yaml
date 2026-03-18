@@ -1,0 +1,4 @@
+interface:
+  display_name: "APITrace Integration (iOS)"
+  short_description: "Add the APITrace iOS network recorder to iOS apps"
+  default_prompt: "Integrate APITrace into this iOS app's real networking path, keep release behavior safe, configure redaction deliberately, and add a developer-only export flow."
