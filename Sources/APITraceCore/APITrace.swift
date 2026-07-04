@@ -38,6 +38,27 @@ public enum APITrace {
         }
         return try encoder.encode(records())
     }
+
+    /// Exports captured records as a HAR 1.2 archive.
+    public static func exportHAR(prettyPrinted: Bool = true) throws -> Data {
+        try harData(for: records(), prettyPrinted: prettyPrinted)
+    }
+
+    static func harData(for records: [APITraceRecord], prettyPrinted: Bool = true) throws -> Data {
+        let export = HARExport(
+            log: HARLog(
+                version: "1.2",
+                creator: HARCreator(name: "APITrace", version: "1.0"),
+                entries: records.map(HAREntry.init)
+            )
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        if prettyPrinted {
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        }
+        return try encoder.encode(export)
+    }
 }
 
 private final class APITraceState {
