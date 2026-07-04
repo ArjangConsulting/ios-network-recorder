@@ -41,13 +41,14 @@ func configureTracing() {
 ## Public API Surface
 
 - `APITrace.install(_:)`
-- `APITrace.start()`
-- `APITrace.stop()`
+- `APITrace.start()` — enables capture; no requests are recorded before this is called.
+- `APITrace.stop()` — disables capture; already-buffered records are kept, but no new requests are recorded until `start()` is called again.
 - `APITrace.clear()`
 - `APITrace.records()`
 - `APITrace.exportJSON(prettyPrinted:)`
 - `APITrace.exportHAR(prettyPrinted:)`
 - `APITraceRedactor(headerRules:queryItemRules:replacement:)`
+- `APITraceDebugBootstrap.install(maxRecords:redactor:maxBodyBytes:)`
 
 All public types/functions are documented with Swift doc comments in `Sources/APITraceCore` and public bootstrap files.
 
@@ -116,6 +117,7 @@ Each record is one full exchange (request + response/failure):
 ```swift
 APITraceDebugBootstrap.install(
     maxRecords: 500,
+    maxBodyBytes: 64 * 1024,
     redactor: APITraceRedactor(
         headerRules: [
             "Authorization": .includes,
@@ -133,3 +135,5 @@ APITraceDebugBootstrap.install(
 
 - Uses `URLProtocol` to intercept HTTP/HTTPS via `URLSession`.
 - Bodies are captured as UTF-8 text when possible; otherwise base64.
+- Response body capture is truncated to `maxBodyBytes` (default 64 KB) to bound memory usage.
+- Capture only happens between `APITrace.start()` and `APITrace.stop()`.

@@ -16,6 +16,7 @@ let package = Package(
         .target(name: "APITraceCore"),
         .target(name: "APITraceDebug", dependencies: ["APITraceCore"]),
         .target(name: "APITraceNoop", dependencies: ["APITraceCore"]),
-        .testTarget(name: "APITraceCoreTests", dependencies: ["APITraceCore"])
+        .testTarget(name: "APITraceCoreTests", dependencies: ["APITraceCore"]),
+        .testTarget(name: "APITraceDebugTests", dependencies: ["APITraceCore", "APITraceDebug"])
     ]
 )

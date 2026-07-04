@@ -9,6 +9,10 @@ final class APITraceURLProtocol: URLProtocol {
             return false
         }
 
+        guard APITraceURLProtocolContext.snapshot().isCapturing else {
+            return false
+        }
+
         if URLProtocol.property(forKey: APITraceURLProtocolContext.handledKey, in: request) != nil {
             return false
         }
@@ -32,11 +36,19 @@ final class APITraceURLProtocol: URLProtocol {
         URLProtocol.setProperty(true, forKey: APITraceURLProtocolContext.handledKey, in: mutableRequest)
         let requestForLoading = mutableRequest as URLRequest
 
-        let startedAt = Date()
-        let redactedURL = APITraceURLProtocolContext.redactor.redact(url: url)
-        let requestPayload = makeRequestPayload(from: requestForLoading, redactedURL: redactedURL)
+        // Snapshot the active configuration once so this request is unaffected by a
+        // concurrent start()/stop()/install() on another thread mid-flight.
+        let configuration = APITraceURLProtocolContext.snapshot().configuration
 
-        let session = APITraceURLProtocol.makePassthroughSession()
+        let startedAt = Date()
+        let redactedURL = configuration.redactor.redact(url: url)
+        let requestPayload = makeRequestPayload(
+            from: requestForLoading,
+            redactedURL: redactedURL,
+            redactor: configuration.redactor
+        )
+
+        let session = APITraceURLProtocol.passthroughSession
         sessionTask = session.dataTask(with: requestForLoading) { [weak self] data, response, error in
             guard let self else { return }
 
@@ -53,7 +65,7 @@ final class APITraceURLProtocol: URLProtocol {
             let endpoint = url.path
 
             if let error {
-                APITraceURLProtocolContext.recorder.append(
+                configuration.recorder.append(
                     APITraceRecord(
                         startedAt: startedAt,
                         durationMs: durationMs,
@@ -68,7 +80,7 @@ final class APITraceURLProtocol: URLProtocol {
                 self.client?.urlProtocol(self, didFailWithError: error)
             } else {
                 let httpResponse = response as? HTTPURLResponse
-                APITraceURLProtocolContext.recorder.append(
+                configuration.recorder.append(
                     APITraceRecord(
                         startedAt: startedAt,
                         durationMs: durationMs,
@@ -76,7 +88,11 @@ final class APITraceURLProtocol: URLProtocol {
                         url: redactedURL.url,
                         endpoint: endpoint,
                         request: requestPayload,
-                        response: self.makeResponsePayload(from: httpResponse, body: data),
+                        response: self.makeResponsePayload(
+                            from: httpResponse,
+                            body: data,
+                            maxBodyBytes: configuration.maxBodyBytes
+                        ),
                         errorMessage: nil
                     )
                 )
@@ -90,8 +106,12 @@ final class APITraceURLProtocol: URLProtocol {
         sessionTask?.cancel()
     }
 
-    private func makeRequestPayload(from request: URLRequest, redactedURL: APITraceRedactedURL) -> APITraceRequest {
-        let headers = APITraceURLProtocolContext.redactor.redact(singleValueHeaders: request.allHTTPHeaderFields ?? [:])
+    private func makeRequestPayload(
+        from request: URLRequest,
+        redactedURL: APITraceRedactedURL,
+        redactor: APITraceRedactor
+    ) -> APITraceRequest {
+        let headers = redactor.redact(singleValueHeaders: request.allHTTPHeaderFields ?? [:])
         let bodyCapture = decodeBody(request.httpBody)
         return APITraceRequest(
             headers: headers,
@@ -101,11 +121,16 @@ final class APITraceURLProtocol: URLProtocol {
         )
     }
 
-    private func makeResponsePayload(from response: HTTPURLResponse?, body: Data?) -> APITraceResponse? {
+    private func makeResponsePayload(
+        from response: HTTPURLResponse?,
+        body: Data?,
+        maxBodyBytes: Int
+    ) -> APITraceResponse? {
         guard let response else { return nil }
 
         let headers = normalizeHeaders(response.allHeaderFields)
-        let bodyCapture = decodeBody(body)
+        let cappedBody = body.map { $0.prefix(maxBodyBytes) }
+        let bodyCapture = decodeBody(cappedBody.map(Data.init))
 
         return APITraceResponse(
             statusCode: response.statusCode,
@@ -146,10 +171,12 @@ final class APITraceURLProtocol: URLProtocol {
         return (nil, data.base64EncodedString())
     }
 
-    private static func makePassthroughSession() -> URLSession {
+    /// Shared passthrough session, created once and reused for every intercepted request.
+    /// Excludes `APITraceURLProtocol` from its own protocol chain to avoid recursive interception.
+    private static let passthroughSession: URLSession = {
         let config = URLSessionConfiguration.default
         let existing = config.protocolClasses ?? []
         config.protocolClasses = existing.filter { $0 != APITraceURLProtocol.self }
         return URLSession(configuration: config)
-    }
+    }()
 }
