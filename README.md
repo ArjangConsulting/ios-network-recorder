@@ -46,6 +46,7 @@ func configureTracing() {
 - `APITrace.clear()`
 - `APITrace.records()`
 - `APITrace.exportJSON(prettyPrinted:)`
+- `APITrace.exportHAR(prettyPrinted:)`
 - `APITraceRedactor(headerRules:queryItemRules:replacement:)`
 
 All public types/functions are documented with Swift doc comments in `Sources/APITraceCore` and public bootstrap files.
