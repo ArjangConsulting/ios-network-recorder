@@ -26,7 +26,7 @@ This file is the canonical agent guide for the repo.
 - `APITraceDebug` captures traffic by registering a global `URLProtocol`, so startup timing matters.
 - `APITraceNoop` should remain safe to install in non-debug contexts.
 - Keep request metadata capture opt-in through `APITraceRedactor`.
-- If you change exported JSON behavior, consider the Android counterpart before finalizing. iOS exports `startedAt` as ISO 8601; Android exports `startedAtEpochMs` as epoch milliseconds.
+- If you change exported JSON behavior, consider the Android counterpart before finalizing. Both platforms export `startedAt` as ISO 8601 with millisecond precision — keep the wire format identical.
 - When public behavior or integration changes, update `README.md`.
 - This repo ships an SDK, not a sample app. Avoid app-specific assumptions in code or docs.
 
