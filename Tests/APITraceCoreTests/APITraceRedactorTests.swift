@@ -37,6 +37,54 @@ struct APITraceRedactorTests {
         #expect(redactedURL.queryItems["ignored"] == nil)
     }
 
+    @Test("Response headers are captured by default with sensitive defaults redacted")
+    func responseHeadersRedactSensitiveDefaults() {
+        let redactor = APITraceRedactor.default
+
+        let headers = redactor.redact(responseHeaders: [
+            "Content-Type": ["application/json"],
+            "set-cookie": ["session=abc123; HttpOnly", "theme=dark"],
+            "WWW-Authenticate": ["Bearer realm=\"api\""],
+            "X-Request-Id": ["req-42"],
+        ])
+
+        #expect(headers["Content-Type"] == ["application/json"])
+        #expect(headers["set-cookie"] == ["<mocked>", "<mocked>"])
+        #expect(headers["WWW-Authenticate"] == ["<mocked>"])
+        #expect(headers["X-Request-Id"] == ["req-42"])
+    }
+
+    @Test("Response header rules can opt sensitive headers back in or add new ones")
+    func responseHeaderRulesAreOverridable() {
+        let redactor = APITraceRedactor(
+            responseHeaderRules: [
+                "Set-Cookie": .exact,
+                "X-Internal-Token": .includes,
+            ]
+        )
+
+        let headers = redactor.redact(responseHeaders: [
+            "Set-Cookie": ["session=abc123"],
+            "X-Internal-Token": ["secret"],
+        ])
+
+        #expect(headers["Set-Cookie"] == ["session=abc123"])
+        #expect(headers["X-Internal-Token"] == ["<mocked>"])
+    }
+
+    @Test("Error messages have URL query strings stripped")
+    func errorMessagesLoseQueryStrings() {
+        let redactor = APITraceRedactor.default
+
+        let sanitized = redactor.redact(
+            errorMessage: "Could not connect to https://api.example.com/v1/users?token=secret&page=1."
+        )
+        #expect(sanitized == "Could not connect to https://api.example.com/v1/users")
+
+        let untouched = redactor.redact(errorMessage: "The request timed out. Retry? Yes/no")
+        #expect(untouched == "The request timed out. Retry? Yes/no")
+    }
+
     @Test("Default redactor drops request metadata until configured")
     func defaultRedactorDropsRequestMetadata() throws {
         let redactor = APITraceRedactor.default

@@ -38,6 +38,18 @@ func configureTracing() {
 }
 ```
 
+### Custom URLSession Configurations
+
+Global registration only reaches `URLSession.shared`. Sessions built from their own
+`URLSessionConfiguration` (including Alamofire's) must be opted in before the session
+is created:
+
+```swift
+let configuration = URLSessionConfiguration.default
+APITraceDebugBootstrap.enableCapture(in: configuration) // no-op in APITraceNoop
+let session = URLSession(configuration: configuration)
+```
+
 ## Public API Surface
 
 - `APITrace.install(_:)`
@@ -47,8 +59,9 @@ func configureTracing() {
 - `APITrace.records()`
 - `APITrace.exportJSON(prettyPrinted:)`
 - `APITrace.exportHAR(prettyPrinted:)`
-- `APITraceRedactor(headerRules:queryItemRules:replacement:)`
-- `APITraceDebugBootstrap.install(maxRecords:redactor:maxBodyBytes:)`
+- `APITraceRedactor(headerRules:queryItemRules:responseHeaderRules:replacement:)`
+- `APITraceDebugBootstrap.install(maxRecords:redactor:maxBodyBytes:captureRequestBodies:captureResponseBodies:)`
+- `APITraceDebugBootstrap.enableCapture(in:)` — opts a custom `URLSessionConfiguration` into capture (no-op variant in `APITraceNoop`)
 
 All public types/functions are documented with Swift doc comments in `Sources/APITraceCore` and public bootstrap files.
 
@@ -105,6 +118,10 @@ Each record is one full exchange (request + response/failure):
 - Request headers are opt-in via `headerRules`.
 - `exact` preserves the original value.
 - `includes` keeps only presence semantics and stores the configured replacement value.
+- Response headers are captured by default, except credential-bearing headers
+  (`Set-Cookie`, `Set-Cookie2`, `Authorization`, `Proxy-Authenticate`, `WWW-Authenticate`),
+  which are replaced with the replacement value. Override via `responseHeaderRules`
+  (`exact` opts a default back in; `includes` redacts additional headers).
 
 ### Query Behavior
 
@@ -133,7 +150,20 @@ APITraceDebugBootstrap.install(
 
 ## Notes
 
-- Uses `URLProtocol` to intercept HTTP/HTTPS via `URLSession`.
-- Bodies are captured as UTF-8 text when possible; otherwise base64.
-- Response body capture is truncated to `maxBodyBytes` (default 64 KB) to bound memory usage.
+- Uses `URLProtocol` to intercept HTTP/HTTPS via `URLSession`. Global registration only
+  reaches `URLSession.shared`; use `enableCapture(in:)` for custom configurations.
+- Bodies are captured as UTF-8 text when possible; otherwise base64. Request and response
+  body capture is truncated to `maxBodyBytes` (default 64 KB) to bound memory usage, and
+  can be disabled entirely with `captureRequestBodies: false` / `captureResponseBodies: false`.
+  Bodies are stored verbatim — there is no field-level body redaction, so disable body
+  capture for endpoints that exchange credentials if that is a concern.
+- Streamed request bodies are buffered in full so they can be forwarded; very large
+  uploads are captured only up to `maxBodyBytes` but still transit memory once.
+- Auth challenges are forwarded to the app's session, so certificate pinning and custom
+  trust evaluation keep working while tracing is enabled.
+- Redirects are re-dispatched through the app's session; each hop produces its own record,
+  and HAR export surfaces the `Location` header as `redirectURL`.
+- Error messages are sanitized: query strings in embedded URLs are stripped before storage.
+- Records live in memory only; exports (`exportJSON`/`exportHAR`) still contain captured
+  response data, so treat exported files as sensitive.
 - Capture only happens between `APITrace.start()` and `APITrace.stop()`.
