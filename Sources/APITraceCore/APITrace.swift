@@ -31,12 +31,11 @@ public enum APITrace {
 
     /// Exports captured records as JSON.
     public static func exportJSON(prettyPrinted: Bool = true) throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        if prettyPrinted {
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        }
-        return try encoder.encode(records())
+        try jsonData(for: records(), prettyPrinted: prettyPrinted)
+    }
+
+    static func jsonData(for records: [APITraceRecord], prettyPrinted: Bool = true) throws -> Data {
+        try makeExportEncoder(prettyPrinted: prettyPrinted).encode(records)
     }
 
     /// Exports captured records as a HAR 1.2 archive.
@@ -52,12 +51,26 @@ public enum APITrace {
                 entries: records.map(HAREntry.init)
             )
         )
+        return try makeExportEncoder(prettyPrinted: prettyPrinted).encode(export)
+    }
+
+    // Millisecond-precision ISO 8601; the same wire format the Android SDK exports.
+    private static let iso8601MillisecondsFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static func makeExportEncoder(prettyPrinted: Bool) -> JSONEncoder {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(iso8601MillisecondsFormatter.string(from: date))
+        }
         if prettyPrinted {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         }
-        return try encoder.encode(export)
+        return encoder
     }
 }
 

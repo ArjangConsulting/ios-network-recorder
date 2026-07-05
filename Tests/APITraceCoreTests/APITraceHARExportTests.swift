@@ -62,6 +62,14 @@ struct APITraceHARExportTests {
         #expect(timings["receive"] as? Int == 0)
     }
 
+    @Test("startedDateTime is ISO 8601 with millisecond precision")
+    func startedDateTimeFormat() throws {
+        let root = try har()
+        let log = try #require(root["log"] as? [String: Any])
+        let entry = try #require((log["entries"] as? [[String: Any]])?.first)
+        #expect(entry["startedDateTime"] as? String == "2025-03-05T02:50:00.000Z")
+    }
+
     @Test("Request method and URL are mapped")
     func requestMethodAndURL() throws {
         let root = try har()
