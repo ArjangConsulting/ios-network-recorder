@@ -64,6 +64,8 @@ struct HARContent: Encodable {
     let size: Int
     let mimeType: String
     let text: String?
+    /// "base64" when `text` holds base64-encoded binary content (HAR 1.2).
+    let encoding: String?
 }
 
 struct HARCache: Encodable {}
@@ -101,7 +103,10 @@ extension HARRequest {
         cookies = []
         headersSize = -1
         bodySize = -1
-        postData = record.request.bodyText.map { HARPostData(mimeType: "", text: $0) }
+        let mimeType = harMimeType(
+            fromContentType: firstHeaderValue(named: "Content-Type", in: record.request.headers)
+        )
+        postData = record.request.bodyText.map { HARPostData(mimeType: mimeType, text: $0) }
     }
 }
 
@@ -112,7 +117,7 @@ extension HARResponse {
         httpVersion: "HTTP/1.1",
         headers: [],
         cookies: [],
-        content: HARContent(size: -1, mimeType: "", text: nil),
+        content: HARContent(size: 0, mimeType: "", text: nil, encoding: nil),
         redirectURL: "",
         headersSize: -1,
         bodySize: -1
@@ -126,12 +131,39 @@ extension HARResponse {
             values.map { HARNameValue(name: name, value: $0) }
         }
         cookies = []
-        let mimeType = response.headers["Content-Type"]?.first?
-            .components(separatedBy: ";").first?
-            .trimmingCharacters(in: .whitespaces) ?? ""
-        content = HARContent(size: -1, mimeType: mimeType, text: response.bodyText)
-        redirectURL = ""
+        let mimeType = harMimeType(
+            fromContentType: firstHeaderValue(named: "Content-Type", in: response.headers)
+        )
+        if let text = response.bodyText {
+            content = HARContent(size: text.utf8.count, mimeType: mimeType, text: text, encoding: nil)
+        } else if let base64 = response.bodyBase64 {
+            content = HARContent(
+                size: Data(base64Encoded: base64)?.count ?? 0,
+                mimeType: mimeType,
+                text: base64,
+                encoding: "base64"
+            )
+        } else {
+            content = HARContent(size: 0, mimeType: mimeType, text: nil, encoding: nil)
+        }
+        redirectURL = firstHeaderValue(named: "Location", in: response.headers) ?? ""
         headersSize = -1
         bodySize = -1
     }
+}
+
+// MARK: - Header helpers
+
+private func firstHeaderValue(named name: String, in headers: APITraceHeaders) -> String? {
+    headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value.first
+}
+
+private func firstHeaderValue(named name: String, in fields: APITraceCapturedFields) -> String? {
+    fields.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value.values.first
+}
+
+private func harMimeType(fromContentType value: String?) -> String {
+    value?
+        .components(separatedBy: ";").first?
+        .trimmingCharacters(in: .whitespaces) ?? ""
 }

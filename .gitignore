@@ -3,3 +3,4 @@
 .swiftpm/
 *.xcuserdatad
 *.xcworkspace/xcuserdata/
+.claude/settings.local.json

@@ -108,6 +108,76 @@ struct APITraceHARExportTests {
         let content = try #require(response["content"] as? [String: Any])
         #expect(content["text"] as? String == #"{"ok":true}"#)
         #expect(content["mimeType"] as? String == "application/json")
+        #expect(content["size"] as? Int == #"{"ok":true}"#.utf8.count)
+        #expect(content["encoding"] == nil)
+    }
+
+    @Test("Binary response bodies are exported as base64 with encoding marker")
+    func binaryResponseBodyExportedAsBase64() throws {
+        let bytes = Data([0xFF, 0xD8, 0xFF, 0xE0])
+        let record = APITraceRecord(
+            durationMs: 10,
+            method: "GET",
+            url: "https://api.example.com/logo",
+            endpoint: "/logo",
+            request: APITraceRequest(),
+            response: APITraceResponse(
+                statusCode: 200,
+                headers: ["content-type": ["image/jpeg"]],
+                bodyBase64: bytes.base64EncodedString()
+            )
+        )
+        let root = try har(for: [record])
+        let log = try #require(root["log"] as? [String: Any])
+        let entry = try #require((log["entries"] as? [[String: Any]])?.first)
+        let response = try #require(entry["response"] as? [String: Any])
+        let content = try #require(response["content"] as? [String: Any])
+        #expect(content["text"] as? String == bytes.base64EncodedString())
+        #expect(content["encoding"] as? String == "base64")
+        #expect(content["size"] as? Int == bytes.count)
+        // Content-Type lookup must be case-insensitive.
+        #expect(content["mimeType"] as? String == "image/jpeg")
+    }
+
+    @Test("Location header is surfaced as redirectURL")
+    func locationHeaderBecomesRedirectURL() throws {
+        let record = APITraceRecord(
+            durationMs: 5,
+            method: "GET",
+            url: "https://api.example.com/old",
+            endpoint: "/old",
+            request: APITraceRequest(),
+            response: APITraceResponse(
+                statusCode: 301,
+                headers: ["Location": ["https://api.example.com/new"]]
+            )
+        )
+        let root = try har(for: [record])
+        let log = try #require(root["log"] as? [String: Any])
+        let entry = try #require((log["entries"] as? [[String: Any]])?.first)
+        let response = try #require(entry["response"] as? [String: Any])
+        #expect(response["redirectURL"] as? String == "https://api.example.com/new")
+    }
+
+    @Test("postData mimeType is taken from captured Content-Type header")
+    func postDataMimeTypeFromCapturedHeader() throws {
+        let record = APITraceRecord(
+            durationMs: 5,
+            method: "POST",
+            url: "https://api.example.com/items",
+            endpoint: "/items",
+            request: APITraceRequest(
+                headers: ["Content-Type": APITraceCapturedField(mode: .exact, values: ["application/json; charset=utf-8"])],
+                bodyText: #"{"name":"x"}"#
+            )
+        )
+        let root = try har(for: [record])
+        let log = try #require(root["log"] as? [String: Any])
+        let entry = try #require((log["entries"] as? [[String: Any]])?.first)
+        let request = try #require(entry["request"] as? [String: Any])
+        let postData = try #require(request["postData"] as? [String: Any])
+        #expect(postData["mimeType"] as? String == "application/json")
+        #expect(postData["text"] as? String == #"{"name":"x"}"#)
     }
 
     @Test("Response headers are flattened to name-value pairs")

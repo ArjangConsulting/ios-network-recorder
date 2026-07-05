@@ -9,6 +9,8 @@ enum APITraceURLProtocolContext {
         let recorder: APITraceRecorder
         let redactor: APITraceRedactor
         let maxBodyBytes: Int
+        let captureRequestBodies: Bool
+        let captureResponseBodies: Bool
     }
 
     struct Snapshot {
@@ -20,14 +22,28 @@ enum APITraceURLProtocolContext {
     private static var current = Configuration(
         recorder: APITraceRecorder(maxRecords: 500),
         redactor: .default,
-        maxBodyBytes: 64 * 1024
+        maxBodyBytes: 64 * 1024,
+        captureRequestBodies: true,
+        captureResponseBodies: true
     )
     private static var isCapturing = false
 
-    static func configure(recorder: APITraceRecorder, redactor: APITraceRedactor, maxBodyBytes: Int) {
+    static func configure(
+        recorder: APITraceRecorder,
+        redactor: APITraceRedactor,
+        maxBodyBytes: Int,
+        captureRequestBodies: Bool,
+        captureResponseBodies: Bool
+    ) {
         lock.lock()
         defer { lock.unlock() }
-        current = Configuration(recorder: recorder, redactor: redactor, maxBodyBytes: maxBodyBytes)
+        current = Configuration(
+            recorder: recorder,
+            redactor: redactor,
+            maxBodyBytes: maxBodyBytes,
+            captureRequestBodies: captureRequestBodies,
+            captureResponseBodies: captureResponseBodies
+        )
     }
 
     /// Toggles whether `APITraceURLProtocol` should intercept requests. This is the

@@ -4,17 +4,32 @@ import Foundation
 public struct APITraceRedactor: Sendable {
     public let headerRules: [String: APITraceCaptureMode]
     public let queryItemRules: [String: APITraceCaptureMode]
+    public let responseHeaderRules: [String: APITraceCaptureMode]
     public let replacement: String
+
+    /// Response headers that carry credentials or session material and are
+    /// therefore redacted unless a rule explicitly opts them back in.
+    public static let defaultResponseHeaderRules: [String: APITraceCaptureMode] = [
+        "Set-Cookie": .includes,
+        "Set-Cookie2": .includes,
+        "Authorization": .includes,
+        "Proxy-Authenticate": .includes,
+        "WWW-Authenticate": .includes,
+    ]
 
     public init(
         headerRules: [String: APITraceCaptureMode] = [:],
         queryItemRules: [String: APITraceCaptureMode] = [:],
+        responseHeaderRules: [String: APITraceCaptureMode] = APITraceRedactor.defaultResponseHeaderRules,
         replacement: String = "<mocked>"
     ) {
         self.headerRules = Dictionary(
             uniqueKeysWithValues: headerRules.map { ($0.key.lowercased(), $0.value) }
         )
         self.queryItemRules = queryItemRules
+        self.responseHeaderRules = Dictionary(
+            uniqueKeysWithValues: responseHeaderRules.map { ($0.key.lowercased(), $0.value) }
+        )
         self.replacement = replacement
     }
 
@@ -37,6 +52,30 @@ public struct APITraceRedactor: Sendable {
     public func redact(singleValueHeaders: [String: String]) -> APITraceCapturedFields {
         let normalized = singleValueHeaders.mapValues { [$0] }
         return redact(headers: normalized)
+    }
+
+    /// Sanitizes response headers. Unlike request headers, response headers are
+    /// captured by default; headers with an `includes` rule keep presence only.
+    public func redact(responseHeaders: APITraceHeaders) -> APITraceHeaders {
+        var output: APITraceHeaders = [:]
+        output.reserveCapacity(responseHeaders.count)
+
+        for (name, values) in responseHeaders {
+            let mode = responseHeaderRules[name.lowercased()] ?? .exact
+            output[name] = values.map { sanitizedValue(for: mode, originalValue: $0) }
+        }
+
+        return output
+    }
+
+    /// Strips query strings from URLs embedded in error messages, which would
+    /// otherwise bypass query-item redaction.
+    public func redact(errorMessage: String) -> String {
+        errorMessage.replacingOccurrences(
+            of: #"(https?://[^\s?'"<>]*)\?[^\s'"<>]*"#,
+            with: "$1",
+            options: .regularExpression
+        )
     }
 
     /// Captures only the configured query items and rebuilds a sanitized URL.
