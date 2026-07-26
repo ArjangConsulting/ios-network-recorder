@@ -64,15 +64,9 @@ final class APITraceURLProtocol: URLProtocol {
 
         var requestBody: Data?
         if configuration.captureRequestBodies {
-            if let body = request.httpBody {
-                requestBody = body
-            } else if let stream = request.httpBodyStream, let drained = Self.drain(stream) {
-                // URLSession hands bodies to URLProtocol only as a stream; buffer it so it
-                // can be captured and re-attached to the forwarded request.
-                mutableRequest.httpBodyStream = nil
-                mutableRequest.httpBody = drained
-                requestBody = drained
-            }
+            // Reading an upload stream here consumes or blocks it before URLSession can
+            // send it. Streamed bodies are therefore forwarded untouched and not captured.
+            requestBody = request.httpBody
         }
 
         let requestForLoading = mutableRequest as URLRequest
@@ -86,7 +80,10 @@ final class APITraceURLProtocol: URLProtocol {
         // Per-request session with this protocol as delegate: streams data to the client
         // as it arrives, and forwards redirects and auth challenges (certificate pinning,
         // custom trust) back to the app's own session instead of swallowing them.
-        let sessionConfiguration = URLSessionConfiguration.default
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.httpCookieStorage = nil
+        sessionConfiguration.urlCredentialStorage = nil
+        sessionConfiguration.urlCache = nil
         let existing = sessionConfiguration.protocolClasses ?? []
         sessionConfiguration.protocolClasses = existing.filter { $0 != APITraceURLProtocol.self }
         let session = URLSession(configuration: sessionConfiguration, delegate: self, delegateQueue: nil)
@@ -198,23 +195,6 @@ final class APITraceURLProtocol: URLProtocol {
         return (nil, data.base64EncodedString())
     }
 
-    private static func drain(_ stream: InputStream) -> Data? {
-        stream.open()
-        defer { stream.close() }
-
-        var data = Data()
-        let chunkSize = 16 * 1024
-        var chunk = [UInt8](repeating: 0, count: chunkSize)
-
-        while stream.hasBytesAvailable {
-            let read = stream.read(&chunk, maxLength: chunkSize)
-            if read < 0 { return nil }
-            if read == 0 { break }
-            data.append(chunk, count: read)
-        }
-
-        return data
-    }
 }
 
 // MARK: - Passthrough session delegate
@@ -310,7 +290,7 @@ extension APITraceURLProtocol: URLSessionDataDelegate {
         if redirected { return }
 
         appendRecord(
-            response: error == nil ? receivedResponse : nil,
+            response: receivedResponse,
             body: responseBodyPrefix,
             bodyTruncated: responseBodyBytesSeen > configuration.maxBodyBytes,
             error: error

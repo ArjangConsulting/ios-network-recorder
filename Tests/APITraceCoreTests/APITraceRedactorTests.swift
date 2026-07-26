@@ -66,10 +66,12 @@ struct APITraceRedactorTests {
         let headers = redactor.redact(responseHeaders: [
             "Set-Cookie": ["session=abc123"],
             "X-Internal-Token": ["secret"],
+            "WWW-Authenticate": ["Bearer secret"],
         ])
 
         #expect(headers["Set-Cookie"] == ["session=abc123"])
         #expect(headers["X-Internal-Token"] == ["<mocked>"])
+        #expect(headers["WWW-Authenticate"] == ["<mocked>"])
     }
 
     @Test("Error messages have URL query strings stripped")
@@ -100,5 +102,15 @@ struct APITraceRedactorTests {
 
         #expect(redactedURL.url == "https://api.example.com/v1/users")
         #expect(redactedURL.queryItems.isEmpty)
+    }
+
+    @Test("URL credentials and fragments are always removed")
+    func urlCredentialsAndFragmentsAreRemoved() throws {
+        let redactor = APITraceRedactor(queryItemRules: ["page": .exact])
+        let url = try #require(URL(string: "https://user:password@api.example.com/v1/users?page=1#access-token"))
+
+        let redactedURL = redactor.redact(url: url)
+
+        #expect(redactedURL.url == "https://api.example.com/v1/users?page=1")
     }
 }
