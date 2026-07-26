@@ -169,3 +169,9 @@ APITraceDebugBootstrap.install(
 - Records live in memory only; exports (`exportJSON`/`exportHAR`) still contain captured
   response data, so treat exported files as sensitive.
 - Capture only happens between `APITrace.start()` and `APITrace.stop()`.
+
+## Releases
+
+Release Please uses the `RELEASE_PLEASE_TOKEN` Actions secret because the organization
+restricts the built-in `GITHUB_TOKEN` to read-only access. The fine-grained token needs
+repository `Contents: Read and write` and `Pull requests: Read and write` permissions.
