@@ -97,7 +97,7 @@ struct APITraceURLSessionBackendTests {
         let port = try server.start()
         defer { server.stop() }
 
-        let backend = APITraceURLSessionBackend(maxBodyBytes: 10)
+        let backend = APITraceURLSessionBackend(maxBodyBytes: 10, captureResponseBodies: true)
         defer { backend.stop() }
 
         backend.start()
@@ -108,13 +108,13 @@ struct APITraceURLSessionBackendTests {
         #expect(capturedText.utf8.count <= 10)
     }
 
-    @Test("POST request bodies are captured (URLSession delivers them as a stream)")
-    func requestBodyCaptured() async throws {
+    @Test("POST request body streams are forwarded without being consumed for capture")
+    func requestBodyStreamIsNotConsumed() async throws {
         let server = LoopbackHTTPServer()
         let port = try server.start()
         defer { server.stop() }
 
-        let backend = APITraceURLSessionBackend()
+        let backend = APITraceURLSessionBackend(captureRequestBodies: true)
         defer { backend.stop() }
         backend.start()
 
@@ -124,11 +124,11 @@ struct APITraceURLSessionBackendTests {
         try await execute(request)
 
         let record = try #require(backend.records().first)
-        #expect(record.request.bodyText == #"{"name":"widget"}"#)
+        #expect(record.request.bodyText == nil)
     }
 
-    @Test("Request body capture is truncated to maxBodyBytes")
-    func requestBodyTruncated() async throws {
+    @Test("Bodies are not captured by default")
+    func bodyCaptureDefaultsOff() async throws {
         let server = LoopbackHTTPServer()
         let port = try server.start()
         defer { server.stop() }
@@ -143,8 +143,8 @@ struct APITraceURLSessionBackendTests {
         try await execute(request)
 
         let record = try #require(backend.records().first)
-        let capturedText = try #require(record.request.bodyText)
-        #expect(capturedText.utf8.count <= 10)
+        #expect(record.request.bodyText == nil)
+        #expect(record.response?.bodyText == nil)
     }
 
     @Test("Body capture can be disabled while headers are still recorded")

@@ -23,8 +23,8 @@ enum APITraceURLProtocolContext {
         recorder: APITraceRecorder(maxRecords: 500),
         redactor: .default,
         maxBodyBytes: 64 * 1024,
-        captureRequestBodies: true,
-        captureResponseBodies: true
+        captureRequestBodies: false,
+        captureResponseBodies: false
     )
     private static var isCapturing = false
 

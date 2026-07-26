@@ -13,22 +13,23 @@ public struct APITraceRedactor: Sendable {
         "Set-Cookie": .includes,
         "Set-Cookie2": .includes,
         "Authorization": .includes,
+        "Content-Location": .includes,
+        "Location": .includes,
         "Proxy-Authenticate": .includes,
+        "Refresh": .includes,
         "WWW-Authenticate": .includes,
     ]
 
     public init(
         headerRules: [String: APITraceCaptureMode] = [:],
         queryItemRules: [String: APITraceCaptureMode] = [:],
-        responseHeaderRules: [String: APITraceCaptureMode] = APITraceRedactor.defaultResponseHeaderRules,
+        responseHeaderRules: [String: APITraceCaptureMode] = [:],
         replacement: String = "<mocked>"
     ) {
-        self.headerRules = Dictionary(
-            uniqueKeysWithValues: headerRules.map { ($0.key.lowercased(), $0.value) }
-        )
+        self.headerRules = Self.normalized(headerRules)
         self.queryItemRules = queryItemRules
-        self.responseHeaderRules = Dictionary(
-            uniqueKeysWithValues: responseHeaderRules.map { ($0.key.lowercased(), $0.value) }
+        self.responseHeaderRules = Self.normalized(
+            APITraceRedactor.defaultResponseHeaderRules.merging(responseHeaderRules) { _, custom in custom }
         )
         self.replacement = replacement
     }
@@ -84,6 +85,10 @@ public struct APITraceRedactor: Sendable {
             return APITraceRedactedURL(url: url.absoluteString, queryItems: [:])
         }
 
+        components.user = nil
+        components.password = nil
+        components.fragment = nil
+
         let originalItems = components.queryItems ?? []
         if originalItems.isEmpty {
             return APITraceRedactedURL(url: components.string ?? url.absoluteString, queryItems: [:])
@@ -132,6 +137,14 @@ public struct APITraceRedactor: Sendable {
         case .includes:
             return replacement
         }
+    }
+
+    private static func normalized(_ rules: [String: APITraceCaptureMode]) -> [String: APITraceCaptureMode] {
+        var normalized: [String: APITraceCaptureMode] = [:]
+        for (name, mode) in rules {
+            normalized[name.lowercased()] = mode
+        }
+        return normalized
     }
 
     public static let `default` = APITraceRedactor()
