@@ -172,6 +172,5 @@ APITraceDebugBootstrap.install(
 
 ## Releases
 
-Release Please uses the `RELEASE_PLEASE_TOKEN` Actions secret because the organization
-restricts the built-in `GITHUB_TOKEN` to read-only access. The fine-grained token needs
-repository `Contents: Read and write` and `Pull requests: Read and write` permissions.
+Release Please uses the built-in `GITHUB_TOKEN`. The organization allows Actions to create
+pull requests, while the workflow grants only the write permissions needed for releases.
