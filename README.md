@@ -118,9 +118,10 @@ Each record is one full exchange (request + response/failure):
 - Request headers are opt-in via `headerRules`.
 - `exact` preserves the original value.
 - `includes` keeps only presence semantics and stores the configured replacement value.
-- Response headers are captured by default, except credential-bearing headers
-  (`Set-Cookie`, `Set-Cookie2`, `Authorization`, `Proxy-Authenticate`, `WWW-Authenticate`),
-  which are replaced with the replacement value. Override via `responseHeaderRules`
+- Response headers are captured by default, except credential-bearing and redirect headers
+  (`Set-Cookie`, `Set-Cookie2`, `Authorization`, `Proxy-Authenticate`, `WWW-Authenticate`,
+  `Location`, `Content-Location`, `Refresh`), which are replaced with the replacement value.
+  Custom `responseHeaderRules` extend these defaults. Override a default with `exact`
   (`exact` opts a default back in; `includes` redacts additional headers).
 
 ### Query Behavior
@@ -135,6 +136,8 @@ Each record is one full exchange (request + response/failure):
 APITraceDebugBootstrap.install(
     maxRecords: 500,
     maxBodyBytes: 64 * 1024,
+    captureRequestBodies: true,
+    captureResponseBodies: true,
     redactor: APITraceRedactor(
         headerRules: [
             "Authorization": .includes,
@@ -152,17 +155,16 @@ APITraceDebugBootstrap.install(
 
 - Uses `URLProtocol` to intercept HTTP/HTTPS via `URLSession`. Global registration only
   reaches `URLSession.shared`; use `enableCapture(in:)` for custom configurations.
-- Bodies are captured as UTF-8 text when possible; otherwise base64. Request and response
-  body capture is truncated to `maxBodyBytes` (default 64 KB) to bound memory usage, and
-  can be disabled entirely with `captureRequestBodies: false` / `captureResponseBodies: false`.
-  Bodies are stored verbatim — there is no field-level body redaction, so disable body
-  capture for endpoints that exchange credentials if that is a concern.
-- Streamed request bodies are buffered in full so they can be forwarded; very large
-  uploads are captured only up to `maxBodyBytes` but still transit memory once.
+- Body capture is disabled by default because bodies are stored verbatim with no field-level
+  redaction. Explicitly enable it only for endpoints whose payloads are safe to retain.
+- Enabled bodies are captured as UTF-8 text when possible; otherwise base64, and truncated
+  to `maxBodyBytes` (default 64 KB). Streamed request bodies are forwarded untouched and are
+  not captured because consuming them could alter the upload.
+- Stored URLs always omit user credentials and fragments. Query items remain opt-in.
 - Auth challenges are forwarded to the app's session, so certificate pinning and custom
   trust evaluation keep working while tracing is enabled.
-- Redirects are re-dispatched through the app's session; each hop produces its own record,
-  and HAR export surfaces the `Location` header as `redirectURL`.
+- Redirects are re-dispatched through the app's session; each hop produces its own record.
+  Redirect headers are redacted by default because they commonly contain authorization codes.
 - Error messages are sanitized: query strings in embedded URLs are stripped before storage.
 - Records live in memory only; exports (`exportJSON`/`exportHAR`) still contain captured
   response data, so treat exported files as sensitive.

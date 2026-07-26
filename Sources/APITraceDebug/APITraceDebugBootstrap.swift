@@ -7,8 +7,8 @@ public enum APITraceDebugBootstrap {
         maxRecords: Int = 500,
         redactor: APITraceRedactor = .default,
         maxBodyBytes: Int = 64 * 1024,
-        captureRequestBodies: Bool = true,
-        captureResponseBodies: Bool = true
+        captureRequestBodies: Bool = false,
+        captureResponseBodies: Bool = false
     ) {
         APITrace.install(
             APITraceURLSessionBackend(
