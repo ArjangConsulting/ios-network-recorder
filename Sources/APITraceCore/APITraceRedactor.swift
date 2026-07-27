@@ -34,15 +34,15 @@ public struct APITraceRedactor: Sendable {
         self.replacement = replacement
     }
 
-    /// Captures only the configured request headers.
+    /// Captures every request header. Rules override the default `.exact` behavior and are used
+    /// for sanitization, so callers can redact sensitive values without accidentally dropping
+    /// ordinary protocol or application headers.
     public func redact(headers: APITraceHeaders) -> APITraceCapturedFields {
         var output: APITraceCapturedFields = [:]
         output.reserveCapacity(headers.count)
 
         for (name, values) in headers {
-            guard let mode = headerRules[name.lowercased()] else {
-                continue
-            }
+            let mode = headerRules[name.lowercased()] ?? .exact
             output[name] = makeCapturedField(mode: mode, originalValues: values)
         }
 
