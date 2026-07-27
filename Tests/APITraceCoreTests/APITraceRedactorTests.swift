@@ -4,8 +4,8 @@ import Testing
 
 @Suite("APITraceRedactor")
 struct APITraceRedactorTests {
-    @Test("Request capture is opt-in for headers and query items")
-    func requestCaptureIsOptIn() throws {
+    @Test("Request headers are preserved and configured values are sanitized")
+    func requestHeadersArePreservedAndSanitized() throws {
         let redactor = APITraceRedactor(
             headerRules: [
                 "Authorization": .includes,
@@ -23,10 +23,10 @@ struct APITraceRedactorTests {
             "Accept": "application/json",
         ])
 
-        #expect(headers.count == 2)
+        #expect(headers.count == 3)
         #expect(headers["Authorization"] == APITraceCapturedField(mode: .includes, values: ["<mocked>"]))
         #expect(headers["X-Trace-Id"] == APITraceCapturedField(mode: .exact, values: ["trace-123"]))
-        #expect(headers["Accept"] == nil)
+        #expect(headers["Accept"] == APITraceCapturedField(mode: .exact, values: ["application/json"]))
 
         let url = try #require(URL(string: "https://api.example.com/v1/users?page=1&token=secret&token=backup&ignored=true"))
         let redactedURL = redactor.redact(url: url)
@@ -87,15 +87,16 @@ struct APITraceRedactorTests {
         #expect(untouched == "The request timed out. Retry? Yes/no")
     }
 
-    @Test("Default redactor drops request metadata until configured")
-    func defaultRedactorDropsRequestMetadata() throws {
+    @Test("Default redactor preserves request metadata")
+    func defaultRedactorPreservesRequestMetadata() throws {
         let redactor = APITraceRedactor.default
 
         let headers = redactor.redact(singleValueHeaders: [
             "Authorization": "Bearer secret-token",
             "X-Trace-Id": "trace-123",
         ])
-        #expect(headers.isEmpty)
+        #expect(headers["Authorization"] == APITraceCapturedField(mode: .exact, values: ["Bearer secret-token"]))
+        #expect(headers["X-Trace-Id"] == APITraceCapturedField(mode: .exact, values: ["trace-123"]))
 
         let url = try #require(URL(string: "https://api.example.com/v1/users?page=1&token=secret"))
         let redactedURL = redactor.redact(url: url)
