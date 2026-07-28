@@ -35,20 +35,20 @@ final class APITraceConsoleFormatterTests: XCTestCase {
                 X-Request-ID: trace-123
               Body:
                 {
-                  "title": "Hello"
+                  "title" : "Hello"
                 }
             ← RESPONSE 201 (42ms)
               Headers:
                 Content-Type: application/json
               Body:
                 {
-                  "id": 7
+                  "id" : 7
                 }
             """
         )
     }
 
-    func testFormatsFailureAndEmptyRequestSections() {
+    func testFormatsFailureAndOmitsEmptyRequestBody() {
         let record = APITraceRecord(
             durationMs: 8,
             method: "GET",
@@ -64,8 +64,6 @@ final class APITraceConsoleFormatterTests: XCTestCase {
             → REQUEST GET https://api.example.com/videos
               Headers:
                 <none>
-              Body:
-                <empty>
             ✗ FAILURE (8ms)
               Error:
                 Connection refused
@@ -87,5 +85,71 @@ final class APITraceConsoleFormatterTests: XCTestCase {
 
         XCTAssertTrue(output.contains("abc…[truncated]"))
         XCTAssertTrue(output.contains("<binary body: base64, 4 characters>"))
+    }
+
+    func testPrettyPrintsCompactJSONObjectAndArrayBodies() {
+        let record = APITraceRecord(
+            durationMs: 1,
+            method: "POST",
+            url: "https://api.example.com/items",
+            endpoint: "/items",
+            request: APITraceRequest(bodyText: #"{"request":{"value":true}}"#),
+            response: APITraceResponse(statusCode: 200, bodyText: #"[{"id":1},{"id":2}]"#)
+        )
+
+        let output = APITraceConsoleFormatter().format(record)
+
+        XCTAssertFalse(output.contains(#"{"request":{"value":true}}"#))
+        XCTAssertFalse(output.contains(#"[{"id":1},{"id":2}]"#))
+        XCTAssertTrue(output.contains("\n      \"request\" : {"))
+        XCTAssertTrue(output.contains("\n        \"value\" : true"))
+        XCTAssertTrue(output.contains("\n      {"))
+    }
+
+    func testOmitsEmptyWhitespaceAndEmptyBinaryBodies() {
+        let record = APITraceRecord(
+            durationMs: 1,
+            method: "POST",
+            url: "https://api.example.com/items",
+            endpoint: "/items",
+            request: APITraceRequest(bodyText: " \n\t "),
+            response: APITraceResponse(statusCode: 204, bodyBase64: "")
+        )
+
+        let output = APITraceConsoleFormatter().format(record)
+
+        XCTAssertFalse(output.contains("Body:"))
+        XCTAssertFalse(output.contains("<empty>"))
+    }
+
+    func testPreservesPlainAndMalformedTextBodies() {
+        let record = APITraceRecord(
+            durationMs: 1,
+            method: "POST",
+            url: "https://api.example.com/items",
+            endpoint: "/items",
+            request: APITraceRequest(bodyText: "plain text"),
+            response: APITraceResponse(statusCode: 400, bodyText: "{not json}")
+        )
+
+        let output = APITraceConsoleFormatter().format(record)
+
+        XCTAssertTrue(output.contains("\n    plain text"))
+        XCTAssertTrue(output.contains("\n    {not json}"))
+    }
+
+    func testTruncatesAfterPrettyPrintingJSON() {
+        let record = APITraceRecord(
+            durationMs: 1,
+            method: "POST",
+            url: "https://api.example.com/items",
+            endpoint: "/items",
+            request: APITraceRequest(bodyText: #"{"longValue":"abcdefghijk"}"#)
+        )
+
+        let output = APITraceConsoleFormatter(maxBodyCharacters: 12).format(record)
+
+        XCTAssertTrue(output.contains("…[truncated]"))
+        XCTAssertFalse(output.contains(#"{"longValue""#))
     }
 }
