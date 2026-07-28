@@ -1,3 +1,5 @@
+import Foundation
+
 /// Formats sanitized trace records for readable multiline console output.
 public struct APITraceConsoleFormatter: Sendable {
     /// Maximum number of body characters included before a truncation marker is appended.
@@ -40,15 +42,18 @@ public struct APITraceConsoleFormatter: Sendable {
     private nonisolated func section(
         heading: String,
         headers: APITraceHeaders,
-        body: String
+        body: String?
     ) -> String {
-        """
-        \(heading)
-          Headers:
-        \(formattedHeaders(headers))
-          Body:
-        \(indented(body))
-        """
+        var lines = [
+            heading,
+            "  Headers:",
+            formattedHeaders(headers),
+        ]
+        if let body {
+            lines.append("  Body:")
+            lines.append(indented(body))
+        }
+        return lines.joined(separator: "\n")
     }
 
     private nonisolated func formattedHeaders(_ headers: APITraceHeaders) -> String {
@@ -59,12 +64,33 @@ public struct APITraceConsoleFormatter: Sendable {
         return indented(lines.joined(separator: "\n"))
     }
 
-    private nonisolated func bodyText(_ text: String?, base64: String?) -> String {
-        guard let text else {
-            return base64.map { "<binary body: base64, \($0.count) characters>" } ?? "<empty>"
+    private nonisolated func bodyText(_ text: String?, base64: String?) -> String? {
+        if let text {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+
+            let formatted = prettyPrintedJSON(text) ?? text
+            guard formatted.count > maxBodyCharacters else { return formatted }
+            return String(formatted.prefix(maxBodyCharacters)) + "…[truncated]"
         }
-        guard text.count > maxBodyCharacters else { return text.isEmpty ? "<empty>" : text }
-        return String(text.prefix(maxBodyCharacters)) + "…[truncated]"
+
+        guard let base64, !base64.isEmpty else { return nil }
+        return "<binary body: base64, \(base64.count) characters>"
+    }
+
+    private nonisolated func prettyPrintedJSON(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.first == "{" || trimmed.first == "[",
+            let data = text.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data),
+            let formattedData = try? JSONSerialization.data(
+                withJSONObject: object,
+                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            )
+        else {
+            return nil
+        }
+        return String(data: formattedData, encoding: .utf8)
     }
 
     private nonisolated func indented(_ value: String) -> String {

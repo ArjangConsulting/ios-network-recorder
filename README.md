@@ -81,7 +81,9 @@ for record in APITrace.records() {
 
 The formatter never accepts raw requests or responses. It formats the stored `APITraceRecord`,
 so URLs and headers have already passed through the configured redaction policy. Text bodies are
-truncated to `maxBodyCharacters`; binary bodies are described without printing their base64 data.
+pretty-printed when they contain a JSON object or array, then truncated to `maxBodyCharacters`.
+Empty and whitespace-only bodies are omitted. Binary bodies are described without printing their
+base64 data.
 
 ## Stored Data Format
 
