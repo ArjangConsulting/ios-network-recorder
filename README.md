@@ -59,11 +59,29 @@ let session = URLSession(configuration: configuration)
 - `APITrace.records()`
 - `APITrace.exportJSON(prettyPrinted:)`
 - `APITrace.exportHAR(prettyPrinted:)`
+- `APITraceConsoleFormatter(maxBodyCharacters:).format(_:)`
 - `APITraceRedactor(headerRules:queryItemRules:responseHeaderRules:replacement:)`
 - `APITraceDebugBootstrap.install(maxRecords:redactor:maxBodyBytes:captureRequestBodies:captureResponseBodies:)`
 - `APITraceDebugBootstrap.enableCapture(in:)` — opts a custom `URLSessionConfiguration` into capture (no-op variant in `APITraceNoop`)
 
 All public types/functions are documented with Swift doc comments in `Sources/APITraceCore` and public bootstrap files.
+
+## Readable Console Output
+
+`APITraceConsoleFormatter` turns an already-sanitized record into an indented request and
+response/failure block. It returns a string so the host app can use its preferred logger:
+
+```swift
+let formatter = APITraceConsoleFormatter(maxBodyCharacters: 10_000)
+
+for record in APITrace.records() {
+    logger.debug("\(formatter.format(record), privacy: .public)")
+}
+```
+
+The formatter never accepts raw requests or responses. It formats the stored `APITraceRecord`,
+so URLs and headers have already passed through the configured redaction policy. Text bodies are
+truncated to `maxBodyCharacters`; binary bodies are described without printing their base64 data.
 
 ## Stored Data Format
 
