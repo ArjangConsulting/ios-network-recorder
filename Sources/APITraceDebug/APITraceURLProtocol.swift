@@ -114,7 +114,13 @@ final class APITraceURLProtocol: URLProtocol {
                 statusCode: httpResponse.statusCode,
                 headers: headers,
                 bodyText: bodyCapture.text,
-                bodyBase64: bodyCapture.base64
+                bodyBase64: bodyCapture.base64,
+                bodyCapture: APITraceBodyCapture(
+                    capturedByteCount: body?.count ?? 0,
+                    observedByteCount: responseBodyBytesSeen,
+                    isTruncated: bodyTruncated,
+                    isComplete: error == nil && !bodyTruncated && configuration.captureResponseBodies
+                )
             )
         }
 
@@ -228,8 +234,8 @@ extension APITraceURLProtocol: URLSessionDataDelegate {
         guard !isClientDetached else { return }
         client?.urlProtocol(self, didLoad: data)
 
-        guard configuration.captureResponseBodies else { return }
         responseBodyBytesSeen += data.count
+        guard configuration.captureResponseBodies else { return }
         let remaining = configuration.maxBodyBytes - responseBodyPrefix.count
         if remaining > 0 {
             responseBodyPrefix.append(data.prefix(remaining))

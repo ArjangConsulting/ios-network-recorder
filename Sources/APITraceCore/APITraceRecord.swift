@@ -53,23 +53,42 @@ public struct APITraceRequest: Codable, Sendable {
     }
 }
 
+/// Completeness of the response bytes retained by the recorder.
+/// Absent on older records, where completeness is unknown.
+public struct APITraceBodyCapture: Codable, Sendable {
+    public let capturedByteCount: Int
+    public let observedByteCount: Int
+    public let isTruncated: Bool
+    public let isComplete: Bool
+
+    public init(capturedByteCount: Int, observedByteCount: Int, isTruncated: Bool, isComplete: Bool) {
+        self.capturedByteCount = capturedByteCount
+        self.observedByteCount = observedByteCount
+        self.isTruncated = isTruncated
+        self.isComplete = isComplete
+    }
+}
+
 /// Response payload captured by APITrace.
 public struct APITraceResponse: Codable, Sendable {
     public let statusCode: Int
     public let headers: APITraceHeaders
     public let bodyText: String?
     public let bodyBase64: String?
+    public let bodyCapture: APITraceBodyCapture?
 
     public init(
         statusCode: Int,
         headers: APITraceHeaders = [:],
         bodyText: String? = nil,
-        bodyBase64: String? = nil
+        bodyBase64: String? = nil,
+        bodyCapture: APITraceBodyCapture? = nil
     ) {
         self.statusCode = statusCode
         self.headers = headers
         self.bodyText = bodyText
         self.bodyBase64 = bodyBase64
+        self.bodyCapture = bodyCapture
     }
 }
 

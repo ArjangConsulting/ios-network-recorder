@@ -106,6 +106,11 @@ struct APITraceURLSessionBackendTests {
         let record = try #require(backend.records().first)
         let capturedText = try #require(record.response?.bodyText)
         #expect(capturedText.utf8.count <= 10)
+        let capture = try #require(record.response?.bodyCapture)
+        #expect(capture.capturedByteCount == 10)
+        #expect(capture.observedByteCount == 200)
+        #expect(capture.isTruncated)
+        #expect(!capture.isComplete)
     }
 
     @Test("POST request body streams are forwarded without being consumed for capture")
