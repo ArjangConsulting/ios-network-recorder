@@ -24,6 +24,7 @@ struct HAREntry: Encodable {
     let response: HARResponse
     let cache: HARCache
     let timings: HARTimings
+    let _error: String?
 }
 
 struct HARNameValue: Encodable {
@@ -55,6 +56,7 @@ struct HARResponse: Encodable {
     let headers: [HARNameValue]
     let cookies: [HARNameValue]
     let content: HARContent
+    let _capture: APITraceBodyCapture?
     let redirectURL: String
     let headersSize: Int
     let bodySize: Int
@@ -86,6 +88,7 @@ extension HAREntry {
         response = record.response.map(HARResponse.init) ?? .failed
         cache = HARCache()
         timings = HARTimings(send: 0, wait: record.durationMs, receive: 0)
+        _error = record.errorMessage
     }
 }
 
@@ -118,12 +121,14 @@ extension HARResponse {
         headers: [],
         cookies: [],
         content: HARContent(size: 0, mimeType: "", text: nil, encoding: nil),
+        _capture: nil,
         redirectURL: "",
         headersSize: -1,
         bodySize: -1
     )
 
     init(_ response: APITraceResponse) {
+        _capture = response.bodyCapture
         status = response.statusCode
         statusText = ""
         httpVersion = "HTTP/1.1"
@@ -135,10 +140,10 @@ extension HARResponse {
             fromContentType: firstHeaderValue(named: "Content-Type", in: response.headers)
         )
         if let text = response.bodyText {
-            content = HARContent(size: text.utf8.count, mimeType: mimeType, text: text, encoding: nil)
+            content = HARContent(size: response.bodyCapture?.observedByteCount ?? text.utf8.count, mimeType: mimeType, text: text, encoding: nil)
         } else if let base64 = response.bodyBase64 {
             content = HARContent(
-                size: Data(base64Encoded: base64)?.count ?? 0,
+                size: response.bodyCapture?.observedByteCount ?? Data(base64Encoded: base64)?.count ?? 0,
                 mimeType: mimeType,
                 text: base64,
                 encoding: "base64"

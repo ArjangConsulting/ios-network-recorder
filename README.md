@@ -196,3 +196,13 @@ Release Please uses the built-in `GITHUB_TOKEN`. The organization allows Actions
 pull requests, while the workflow grants only the write permissions needed for releases.
 Automatic releases stay within the current major version and increment the minor version.
 An intentional major release requires an explicit `Release-As: X.0.0` commit footer.
+
+### Capture completeness in HAR exports
+
+New response records carry optional `bodyCapture` metadata. HAR exports preserve it
+as `response._capture`: `capturedByteCount`, `observedByteCount`, `isTruncated`, and
+`isComplete`. `content.size` reflects observed bytes when available. Entry `_error`
+preserves a sanitized transport failure, including cancellation. Consumers must not
+replay captures marked incomplete as successful responses. Missing metadata on older
+or Android exports means unknown completeness, not a guarantee of completeness.
+These additive fields do not change HAR 1.2 compatibility.
