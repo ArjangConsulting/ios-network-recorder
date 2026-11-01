@@ -108,8 +108,8 @@ struct APITraceURLSessionBackendTests {
         #expect(capturedText.utf8.count <= 10)
     }
 
-    @Test("POST request body streams are forwarded without being consumed for capture")
-    func requestBodyStreamIsNotConsumed() async throws {
+    @Test("POST request bodies are captured and still delivered to the server")
+    func requestBodyIsCapturedAndForwarded() async throws {
         let server = LoopbackHTTPServer()
         let port = try server.start()
         defer { server.stop() }
@@ -118,13 +118,79 @@ struct APITraceURLSessionBackendTests {
         defer { backend.stop() }
         backend.start()
 
+        let payload = #"{"name":"widget"}"#
         var request = makeRequest(to: port)
         request.httpMethod = "POST"
-        request.httpBody = Data(#"{"name":"widget"}"#.utf8)
+        request.httpBody = Data(payload.utf8)
         try await execute(request)
 
         let record = try #require(backend.records().first)
+        #expect(record.request.bodyText == payload)
+        #expect(server.bodies.map { String(decoding: $0, as: UTF8.self) } == [payload])
+    }
+
+    @Test("Streamed request bodies with a known length are captured and forwarded")
+    func streamedBodyWithKnownLengthIsCaptured() async throws {
+        let server = LoopbackHTTPServer()
+        let port = try server.start()
+        defer { server.stop() }
+
+        let backend = APITraceURLSessionBackend(captureRequestBodies: true)
+        defer { backend.stop() }
+        backend.start()
+
+        let payload = Data(#"{"text":"hello"}"#.utf8)
+        var request = makeRequest(to: port)
+        request.httpMethod = "POST"
+        request.httpBodyStream = InputStream(data: payload)
+        request.setValue("\(payload.count)", forHTTPHeaderField: "Content-Length")
+        try await execute(request)
+
+        let record = try #require(backend.records().first)
+        #expect(record.request.bodyText == String(decoding: payload, as: UTF8.self))
+        #expect(server.bodies == [payload])
+    }
+
+    @Test("Streamed request bodies of unknown length are forwarded untouched and not captured")
+    func streamedBodyWithUnknownLengthIsNotCaptured() async throws {
+        let server = LoopbackHTTPServer()
+        let port = try server.start()
+        defer { server.stop() }
+
+        let backend = APITraceURLSessionBackend(captureRequestBodies: true)
+        defer { backend.stop() }
+        backend.start()
+
+        let payload = Data("chunked-payload".utf8)
+        var request = makeRequest(to: port)
+        request.httpMethod = "POST"
+        request.httpBodyStream = InputStream(data: payload)
+        let (_, response) = try await execute(request)
+
+        #expect((response as? HTTPURLResponse)?.statusCode == 200)
+        let record = try #require(backend.records().first)
         #expect(record.request.bodyText == nil)
+    }
+
+    @Test("Request body capture is truncated to maxBodyBytes while the full body is forwarded")
+    func requestBodyTruncatedToMaxBodyBytes() async throws {
+        let server = LoopbackHTTPServer()
+        let port = try server.start()
+        defer { server.stop() }
+
+        let backend = APITraceURLSessionBackend(maxBodyBytes: 10, captureRequestBodies: true)
+        defer { backend.stop() }
+        backend.start()
+
+        let payload = Data(String(repeating: "z", count: 200).utf8)
+        var request = makeRequest(to: port)
+        request.httpMethod = "POST"
+        request.httpBody = payload
+        try await execute(request)
+
+        let record = try #require(backend.records().first)
+        #expect(record.request.bodyText == String(repeating: "z", count: 10))
+        #expect(server.bodies == [payload])
     }
 
     @Test("Bodies are not captured by default")

@@ -64,9 +64,26 @@ final class APITraceURLProtocol: URLProtocol {
 
         var requestBody: Data?
         if configuration.captureRequestBodies {
-            // Reading an upload stream here consumes or blocks it before URLSession can
-            // send it. Streamed bodies are therefore forwarded untouched and not captured.
             requestBody = request.httpBody
+            // URLSession usually hands a protocol the body as `httpBodyStream`, not
+            // `httpBody`. A stream can only be read once, so a bounded one is drained
+            // into memory and the forwarded request carries the bytes as `httpBody`.
+            // Streams of unknown or large length are forwarded untouched, uncaptured,
+            // because buffering them could stall or exhaust memory on big uploads.
+            if requestBody == nil,
+               let stream = request.httpBodyStream,
+               let declaredLength = Self.declaredContentLength(of: request),
+               declaredLength <= Self.maxBufferedStreamBytes
+            {
+                do {
+                    let drained = try Self.drain(stream)
+                    requestBody = drained
+                    mutableRequest.httpBody = drained
+                } catch {
+                    client?.urlProtocol(self, didFailWithError: error)
+                    return
+                }
+            }
         }
 
         let requestForLoading = mutableRequest as URLRequest
@@ -153,6 +170,31 @@ final class APITraceURLProtocol: URLProtocol {
     }
 
     // MARK: - Helpers
+
+    /// Largest request body stream that is buffered in memory so it can be both
+    /// captured and forwarded.
+    private static let maxBufferedStreamBytes = 8 * 1024 * 1024
+
+    private static func declaredContentLength(of request: URLRequest) -> Int? {
+        request.value(forHTTPHeaderField: "Content-Length")
+            .flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+            .flatMap { $0 >= 0 ? $0 : nil }
+    }
+
+    private static func drain(_ stream: InputStream) throws -> Data {
+        stream.open()
+        defer { stream.close() }
+
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 16 * 1024)
+        while true {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count < 0 { throw stream.streamError ?? URLError(.cannotOpenFile) }
+            if count == 0 { break }
+            data.append(buffer, count: count)
+        }
+        return data
+    }
 
     private static func normalizeHeaders(_ rawHeaders: [AnyHashable: Any]) -> APITraceHeaders {
         var output: APITraceHeaders = [:]
