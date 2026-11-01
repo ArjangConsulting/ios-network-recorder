@@ -27,6 +27,15 @@ final class LoopbackHTTPServer {
     private let routes: [String: Route]
     private var listenSocket: Int32 = -1
     private let queue = DispatchQueue(label: "com.apitrace.tests.loopback-http-server")
+    private let lock = NSLock()
+    private var receivedBodies: [Data] = []
+
+    /// Request bodies received so far, in arrival order.
+    var bodies: [Data] {
+        lock.lock()
+        defer { lock.unlock() }
+        return receivedBodies
+    }
 
     init(responseBody: String = "ok", routes: [String: Route] = [:]) {
         self.responseBody = responseBody
@@ -82,8 +91,35 @@ final class LoopbackHTTPServer {
         defer { close(clientSocket) }
 
         var buffer = [UInt8](repeating: 0, count: 16 * 1024)
-        let received = recv(clientSocket, &buffer, buffer.count, 0)
-        let requestText = received > 0 ? String(decoding: buffer[0..<received], as: UTF8.self) : ""
+        var raw = Data()
+        let separator = Data("\r\n\r\n".utf8)
+        var expectedTotal: Int?
+        var isChunked = false
+        let chunkedTerminator = Data("0\r\n\r\n".utf8)
+        while true {
+            let received = recv(clientSocket, &buffer, buffer.count, 0)
+            if received <= 0 { break }
+            raw.append(buffer, count: received)
+            if expectedTotal == nil, let headerEnd = raw.range(of: separator) {
+                let head = String(decoding: raw[raw.startIndex..<headerEnd.lowerBound], as: UTF8.self)
+                let length = head.split(separator: "\r\n")
+                    .first { $0.lowercased().hasPrefix("content-length:") }
+                    .flatMap { Int($0.dropFirst("content-length:".count).trimmingCharacters(in: .whitespaces)) }
+                isChunked = head.lowercased().contains("transfer-encoding: chunked")
+                expectedTotal = headerEnd.upperBound + (length ?? 0)
+            }
+            if isChunked {
+                if raw.suffix(chunkedTerminator.count) == chunkedTerminator { break }
+            } else if let expectedTotal, raw.count >= expectedTotal {
+                break
+            }
+        }
+        if let headerEnd = raw.range(of: separator) {
+            lock.lock()
+            receivedBodies.append(Data(raw[headerEnd.upperBound...]))
+            lock.unlock()
+        }
+        let requestText = String(decoding: raw, as: UTF8.self)
         let path = requestText.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
 
         let route = routes[path] ?? Route(body: responseBody)

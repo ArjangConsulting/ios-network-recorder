@@ -178,8 +178,10 @@ APITraceDebugBootstrap.install(
 - Body capture is disabled by default because bodies are stored verbatim with no field-level
   redaction. Explicitly enable it only for endpoints whose payloads are safe to retain.
 - Enabled bodies are captured as UTF-8 text when possible; otherwise base64, and truncated
-  to `maxBodyBytes` (default 64 KB). Streamed request bodies are forwarded untouched and are
-  not captured because consuming them could alter the upload.
+  to `maxBodyBytes` (default 64 KB). `URLSession` normally delivers request bodies to the
+  recorder as streams; those with a `Content-Length` of up to 8 MB are read once, recorded, and
+  forwarded to the server unchanged. Streams of unknown or larger length are forwarded untouched
+  and not captured because buffering them could stall or exhaust memory.
 - Stored URLs always omit user credentials and fragments. Query items remain opt-in.
 - Auth challenges are forwarded to the app's session, so certificate pinning and custom
   trust evaluation keep working while tracing is enabled.
