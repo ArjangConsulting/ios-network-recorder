@@ -43,6 +43,11 @@ public enum APITrace {
         try harData(for: records(), prettyPrinted: prettyPrinted)
     }
 
+    /// Exports the given records as a HAR 1.2 archive, independent of the installed backend.
+    public static func exportHAR(_ records: [APITraceRecord], prettyPrinted: Bool = true) throws -> Data {
+        try harData(for: records, prettyPrinted: prettyPrinted)
+    }
+
     static func harData(for records: [APITraceRecord], prettyPrinted: Bool = true) throws -> Data {
         let export = HARExport(
             log: HARLog(
