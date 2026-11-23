@@ -65,7 +65,7 @@ directory) after every recorded exchange. `clear()` rewrites it empty.
   purge it while the app isn't running, so copy the file right after the scenario.
 - Pass `harFileURL:` to `install` (or to `APITraceURLSessionBackend`) to choose another
   location, or `nil` to never write one. Writes are coalesced and best effort; a failed write
-  never affects the app's own requests.
+  is logged (subsystem `com.apitrace`, category `HARFile`) and never affects the app's own requests.
 - `APITraceNoop` never writes a file.
 
 ## Public API Surface

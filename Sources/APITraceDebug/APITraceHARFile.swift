@@ -1,5 +1,6 @@
 import APITraceCore
 import Foundation
+import OSLog
 
 /// Opt-in export of the captured history to a HAR file, so a test harness can copy a run's
 /// traffic off a simulator or device without app-specific export code.
@@ -27,6 +28,8 @@ public enum APITraceHARFile {
 
 /// Rewrites the HAR file after changes, coalescing bursts into one write on a serial queue.
 final class APITraceHARFileWriter {
+    private static let logger = Logger(subsystem: "com.apitrace", category: "HARFile")
+
     private let url: URL
     private let snapshot: () -> [APITraceRecord]
     private let queue = DispatchQueue(label: "com.apitrace.har-file-writer", qos: .utility)
@@ -59,14 +62,23 @@ final class APITraceHARFileWriter {
     }
 
     private func write() {
+        let records = snapshot()
+        let fileName = url.lastPathComponent
         do {
-            let data = try APITrace.exportHAR(snapshot(), prettyPrinted: false)
+            let data = try APITrace.exportHAR(records, prettyPrinted: false)
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(), withIntermediateDirectories: true
             )
             try data.write(to: url, options: .atomic)
+            Self.logger.debug(
+                "Wrote \(records.count, privacy: .public) exchange(s), \(data.count, privacy: .public) bytes to \(fileName, privacy: .public)"
+            )
         } catch {
-            // Export is best effort: a failed write must never affect the app's own traffic.
+            // Export is best effort: a failed write is logged and never affects the app's own traffic.
+            let nsError = error as NSError
+            Self.logger.error(
+                "Failed to write \(fileName, privacy: .public) with \(records.count, privacy: .public) exchange(s): \(nsError.domain, privacy: .public) \(nsError.code, privacy: .public) \(nsError.localizedDescription, privacy: .private)"
+            )
         }
     }
 }
