@@ -7,12 +7,12 @@ import Testing
 struct APITraceHARFileTests {
     @Test("The launch environment turns HAR file export on", arguments: ["1", "true", "YES"])
     func requested(value: String) {
-        #expect(APITraceHARFile.urlIfRequested(environment: ["APITRACE_HAR_FILE": value]) == APITraceHARFile.defaultURL)
+        #expect(APITraceHARFile.url(environment: ["APITRACE_HAR_FILE": value]) == APITraceHARFile.defaultURL)
     }
 
     @Test("Without the key, or with another value, no file is requested", arguments: [[:], ["APITRACE_HAR_FILE": "0"], ["APITRACE_HAR_FILE": ""]])
     func notRequested(environment: [String: String]) {
-        #expect(APITraceHARFile.urlIfRequested(environment: environment) == nil)
+        #expect(APITraceHARFile.url(environment: environment) == nil)
     }
 
     @Test("The default file sits in the app's temporary directory")

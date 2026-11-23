@@ -12,7 +12,7 @@ public enum APITraceDebugBootstrap {
         maxBodyBytes: Int = 64 * 1024,
         captureRequestBodies: Bool = false,
         captureResponseBodies: Bool = false,
-        harFileURL: URL? = APITraceHARFile.urlIfRequested()
+        harFileURL: URL? = APITraceHARFile.url()
     ) {
         APITrace.install(
             APITraceURLSessionBackend(

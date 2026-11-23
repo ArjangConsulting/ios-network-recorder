@@ -13,8 +13,9 @@ public enum APITraceHARFile {
         FileManager.default.temporaryDirectory.appendingPathComponent("apitrace.har")
     }
 
-    /// ``defaultURL`` when `environment` asks for HAR file export, otherwise `nil`.
-    public static func urlIfRequested(
+    /// The file to write the HAR to: ``defaultURL`` when `environment` asks for HAR file export,
+    /// `nil` when it doesn't.
+    public static func url(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> URL? {
         guard let value = environment[environmentKey]?.lowercased(),

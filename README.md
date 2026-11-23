@@ -78,7 +78,7 @@ directory) after every recorded exchange. `clear()` rewrites it empty.
 - `APITrace.exportJSON(prettyPrinted:)`
 - `APITrace.exportHAR(prettyPrinted:)`
 - `APITrace.exportHAR(_:prettyPrinted:)` (export a given list of records)
-- `APITraceHARFile.environmentKey`, `APITraceHARFile.defaultURL`, `APITraceHARFile.urlIfRequested(environment:)`
+- `APITraceHARFile.environmentKey`, `APITraceHARFile.defaultURL`, `APITraceHARFile.url(environment:)`
 - `APITraceConsoleFormatter(maxBodyCharacters:).format(_:)`
 - `APITraceRedactor(headerRules:queryItemRules:responseHeaderRules:replacement:)`
 - `APITraceDebugBootstrap.install(maxRecords:redactor:maxBodyBytes:captureRequestBodies:captureResponseBodies:)`
