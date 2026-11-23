@@ -50,6 +50,24 @@ APITraceDebugBootstrap.enableCapture(in: configuration) // no-op in APITraceNoop
 let session = URLSession(configuration: configuration)
 ```
 
+## Write a HAR File For Test Harnesses
+
+UI test harnesses can collect a run's traffic without app-specific export code. Launch the app
+with `APITRACE_HAR_FILE=1` in its environment and `APITraceDebugBootstrap.install()` also writes
+the captured history to `APITraceHARFile.defaultURL` (`apitrace.har` in the app's temporary
+directory) after every recorded exchange. `clear()` rewrites it empty.
+
+- The file lives in the app's data container, so a harness can copy it: on a simulator with
+  `xcrun simctl get_app_container <device> <bundle-id> data` (`tmp/apitrace.har` under it), on a
+  device with `xcrun devicectl device copy from --domain-type appDataContainer` for
+  development-signed builds.
+- The temporary directory is not backed up and not shown in the Files app; the system may
+  purge it while the app isn't running, so copy the file right after the scenario.
+- Pass `harFileURL:` to `install` (or to `APITraceURLSessionBackend`) to choose another
+  location, or `nil` to never write one. Writes are coalesced and best effort; a failed write
+  never affects the app's own requests.
+- `APITraceNoop` never writes a file.
+
 ## Public API Surface
 
 - `APITrace.install(_:)`
@@ -59,6 +77,8 @@ let session = URLSession(configuration: configuration)
 - `APITrace.records()`
 - `APITrace.exportJSON(prettyPrinted:)`
 - `APITrace.exportHAR(prettyPrinted:)`
+- `APITrace.exportHAR(_:prettyPrinted:)` (export a given list of records)
+- `APITraceHARFile.environmentKey`, `APITraceHARFile.defaultURL`, `APITraceHARFile.urlIfRequested(environment:)`
 - `APITraceConsoleFormatter(maxBodyCharacters:).format(_:)`
 - `APITraceRedactor(headerRules:queryItemRules:responseHeaderRules:replacement:)`
 - `APITraceDebugBootstrap.install(maxRecords:redactor:maxBodyBytes:captureRequestBodies:captureResponseBodies:)`

@@ -10,19 +10,39 @@ public final class APITraceURLSessionBackend: APITraceBackend {
     private let captureResponseBodies: Bool
     private let lock = NSLock()
     private var started = false
+    private let harFileWriter: APITraceHARFileWriter?
 
+    /// - Parameter harFileURL: When set, the captured history is rewritten to this file as a
+    ///   HAR 1.2 archive after every recorded exchange, so a test harness can copy it off the
+    ///   device. See ``APITraceHARFile``.
     public init(
         maxRecords: Int = 500,
         redactor: APITraceRedactor = .default,
         maxBodyBytes: Int = 64 * 1024,
         captureRequestBodies: Bool = false,
-        captureResponseBodies: Bool = false
+        captureResponseBodies: Bool = false,
+        harFileURL: URL? = nil
     ) {
-        self.recorder = APITraceRecorder(maxRecords: maxRecords)
+        let recorder = APITraceRecorder(maxRecords: maxRecords)
+        self.recorder = recorder
         self.redactor = redactor
         self.maxBodyBytes = max(0, maxBodyBytes)
         self.captureRequestBodies = captureRequestBodies
         self.captureResponseBodies = captureResponseBodies
+        if let harFileURL {
+            let writer = APITraceHARFileWriter(url: harFileURL) { [weak recorder] in
+                recorder?.snapshot() ?? []
+            }
+            recorder.setOnChange { [weak writer] in writer?.recordsChanged() }
+            self.harFileWriter = writer
+        } else {
+            self.harFileWriter = nil
+        }
+    }
+
+    /// Waits until any pending HAR file write has finished. A no-op without a HAR file.
+    public func flushHARFile() {
+        harFileWriter?.flush()
     }
 
     /// Adds the capture protocol to a custom session configuration. `URLProtocol.registerClass`

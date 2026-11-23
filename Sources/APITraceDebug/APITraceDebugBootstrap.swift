@@ -2,13 +2,17 @@ import APITraceCore
 import Foundation
 
 /// Installs the URLSession-backed debug capture backend.
+///
+/// By default the history is also written to ``APITraceHARFile/defaultURL`` when the app is
+/// launched with `APITRACE_HAR_FILE=1` in its environment, and to no file otherwise.
 public enum APITraceDebugBootstrap {
     public static func install(
         maxRecords: Int = 500,
         redactor: APITraceRedactor = .default,
         maxBodyBytes: Int = 64 * 1024,
         captureRequestBodies: Bool = false,
-        captureResponseBodies: Bool = false
+        captureResponseBodies: Bool = false,
+        harFileURL: URL? = APITraceHARFile.urlIfRequested()
     ) {
         APITrace.install(
             APITraceURLSessionBackend(
@@ -16,7 +20,8 @@ public enum APITraceDebugBootstrap {
                 redactor: redactor,
                 maxBodyBytes: maxBodyBytes,
                 captureRequestBodies: captureRequestBodies,
-                captureResponseBodies: captureResponseBodies
+                captureResponseBodies: captureResponseBodies,
+                harFileURL: harFileURL
             )
         )
     }
