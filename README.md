@@ -50,6 +50,12 @@ APITraceDebugBootstrap.enableCapture(in: configuration) // no-op in APITraceNoop
 let session = URLSession(configuration: configuration)
 ```
 
+Captured requests keep their session's cookie behaviour: the session's own `httpCookieStorage`,
+`httpCookieAcceptPolicy` and `httpShouldSetCookies` apply, redirect hops included, so a
+cookie-based sign-in works the same with capture on. `enableCapture(in:)` reads those settings
+when it is called, so call it last, just before creating the session, and again if you change
+them and reuse the configuration.
+
 ## Write a HAR File For Test Harnesses
 
 UI test harnesses can collect a run's traffic without app-specific export code. Launch the app

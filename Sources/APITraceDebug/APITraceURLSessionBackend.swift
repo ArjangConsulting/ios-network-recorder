@@ -49,10 +49,14 @@ public final class APITraceURLSessionBackend: APITraceBackend {
     /// only reaches `URLSession.shared`; sessions built from their own configuration must be
     /// opted in with this before the `URLSession` is created. Capture still only happens
     /// between `start()` and `stop()`.
+    ///
+    /// Captured requests keep this configuration's cookie behaviour: its `httpCookieStorage`,
+    /// `httpCookieAcceptPolicy` and `httpShouldSetCookies` are read here, so call this last,
+    /// after setting them, and again if you change them and reuse the configuration.
     public static func enableCapture(in configuration: URLSessionConfiguration) {
-        let existing = configuration.protocolClasses ?? []
-        guard !existing.contains(where: { $0 == APITraceURLProtocol.self }) else { return }
-        configuration.protocolClasses = [APITraceURLProtocol.self] + existing
+        let existing = (configuration.protocolClasses ?? []).filter { !APITraceSessionProfiles.isCaptureClass($0) }
+        let captureClass: AnyClass = APITraceSessionProfiles.captureClass(for: configuration)
+        configuration.protocolClasses = [captureClass] + existing
     }
 
     public func start() {
