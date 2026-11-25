@@ -39,17 +39,20 @@ public struct APITraceRequest: Codable, Sendable {
     public let queryItems: APITraceCapturedFields
     public let bodyText: String?
     public let bodyBase64: String?
+    public let cookieNames: [String]?
 
     public init(
         headers: APITraceCapturedFields = [:],
         queryItems: APITraceCapturedFields = [:],
         bodyText: String? = nil,
-        bodyBase64: String? = nil
+        bodyBase64: String? = nil,
+        cookieNames: [String]? = nil
     ) {
         self.headers = headers
         self.queryItems = queryItems
         self.bodyText = bodyText
         self.bodyBase64 = bodyBase64
+        self.cookieNames = cookieNames
     }
 }
 
@@ -76,19 +79,22 @@ public struct APITraceResponse: Codable, Sendable {
     public let bodyText: String?
     public let bodyBase64: String?
     public let bodyCapture: APITraceBodyCapture?
+    public let cookieNames: [String]?
 
     public init(
         statusCode: Int,
         headers: APITraceHeaders = [:],
         bodyText: String? = nil,
         bodyBase64: String? = nil,
-        bodyCapture: APITraceBodyCapture? = nil
+        bodyCapture: APITraceBodyCapture? = nil,
+        cookieNames: [String]? = nil
     ) {
         self.statusCode = statusCode
         self.headers = headers
         self.bodyText = bodyText
         self.bodyBase64 = bodyBase64
         self.bodyCapture = bodyCapture
+        self.cookieNames = cookieNames
     }
 }
 

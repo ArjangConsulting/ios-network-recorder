@@ -90,10 +90,12 @@ struct APITraceURLSessionBackendTests {
         #expect(backend.records().count == 2)
     }
 
-    @Test("Response body capture is truncated to maxBodyBytes")
+    @Test("Over-limit response bodies are omitted rather than persisted as partial data")
     func responseBodyTruncatedToMaxBodyBytes() async throws {
-        let longBody = String(repeating: "x", count: 200)
-        let server = LoopbackHTTPServer(responseBody: longBody)
+        let longBody = "{\"token\":\"\(String(repeating: "x", count: 200))\"}"
+        let server = LoopbackHTTPServer(routes: [
+            "/ping": .init(headers: ["Content-Type: application/json"], body: longBody),
+        ])
         let port = try server.start()
         defer { server.stop() }
 
@@ -104,11 +106,10 @@ struct APITraceURLSessionBackendTests {
         try await execute(makeRequest(to: port))
 
         let record = try #require(backend.records().first)
-        let capturedText = try #require(record.response?.bodyText)
-        #expect(capturedText.utf8.count <= 10)
+        #expect(record.response?.bodyText == nil)
         let capture = try #require(record.response?.bodyCapture)
-        #expect(capture.capturedByteCount == 10)
-        #expect(capture.observedByteCount == 200)
+        #expect(capture.capturedByteCount == 0)
+        #expect(capture.observedByteCount == longBody.utf8.count)
         #expect(capture.isTruncated)
         #expect(!capture.isComplete)
     }
@@ -193,7 +194,7 @@ struct APITraceURLSessionBackendTests {
 
         let record = try #require(backend.records().first)
         let headers = try #require(record.response?.headers)
-        #expect(headers["Set-Cookie"] == ["<mocked>"])
+        #expect(headers["Set-Cookie"] == ["[redacted]"])
         #expect(headers["X-Request-Id"] == ["req-7"])
     }
 

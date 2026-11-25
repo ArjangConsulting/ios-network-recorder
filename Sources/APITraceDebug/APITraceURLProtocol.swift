@@ -59,20 +59,12 @@ final class APITraceURLProtocol: URLProtocol {
         self.configuration = configuration
         startedAt = Date()
         method = request.httpMethod ?? "GET"
-        endpoint = url.path
         redactedURL = configuration.redactor.redact(url: url)
-
-        var requestBody: Data?
-        if configuration.captureRequestBodies {
-            // Reading an upload stream here consumes or blocks it before URLSession can
-            // send it. Streamed bodies are therefore forwarded untouched and not captured.
-            requestBody = request.httpBody
-        }
+        endpoint = URL(string: redactedURL.url)?.path ?? ""
 
         let requestForLoading = mutableRequest as URLRequest
-        requestPayload = makeRequestPayload(
-            from: requestForLoading,
-            body: requestBody,
+        requestPayload = Self.makeRequestPayload(
+            from: request,
             redactedURL: redactedURL,
             configuration: configuration
         )
@@ -109,21 +101,25 @@ final class APITraceURLProtocol: URLProtocol {
         let durationMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
 
         let responsePayload: APITraceResponse? = response.map { httpResponse in
-            let headers = configuration.redactor.redact(
-                responseHeaders: Self.normalizeHeaders(httpResponse.allHeaderFields)
-            )
-            let bodyCapture = Self.decodeBody(body, truncated: bodyTruncated)
+            let rawHeaders = Self.normalizeHeaders(httpResponse.allHeaderFields)
+            let redactor = configuration.redactor
+            let contentEncoding = httpResponse.value(forHTTPHeaderField: "Content-Encoding")
+            let bodyText = !bodyTruncated && error == nil && Self.isIdentityEncoding(contentEncoding)
+                ? body.flatMap { redactor.redact(body: $0, contentType: httpResponse.value(forHTTPHeaderField: "Content-Type")) }
+                : nil
+            let cookieNames = redactor.cookieNames(in: rawHeaders, response: true)
             return APITraceResponse(
                 statusCode: httpResponse.statusCode,
-                headers: headers,
-                bodyText: bodyCapture.text,
-                bodyBase64: bodyCapture.base64,
+                headers: redactor.redact(responseHeaders: rawHeaders),
+                bodyText: bodyText,
                 bodyCapture: APITraceBodyCapture(
-                    capturedByteCount: body?.count ?? 0,
+                    capturedByteCount: bodyText?.utf8.count ?? 0,
                     observedByteCount: responseBodyBytesSeen,
                     isTruncated: bodyTruncated,
                     isComplete: error == nil && !bodyTruncated && configuration.captureResponseBodies
-                )
+                        && (responseBodyBytesSeen == 0 || bodyText != nil)
+                ),
+                cookieNames: cookieNames.isEmpty ? nil : cookieNames
             )
         }
 
@@ -136,32 +132,42 @@ final class APITraceURLProtocol: URLProtocol {
                 endpoint: endpoint,
                 request: requestPayload,
                 response: responsePayload,
-                errorMessage: error.map { configuration.redactor.redact(errorMessage: $0.localizedDescription) }
+                errorMessage: error.map { _ in APITraceRedactor.networkFailureMessage }
             )
         )
     }
 
-    private func makeRequestPayload(
+    static func makeRequestPayload(
         from request: URLRequest,
-        body: Data?,
         redactedURL: APITraceRedactedURL,
         configuration: APITraceURLProtocolContext.Configuration
     ) -> APITraceRequest {
-        let headers = configuration.redactor.redact(singleValueHeaders: request.allHTTPHeaderFields ?? [:])
-        let cappedBody = body.map { Data($0.prefix(configuration.maxBodyBytes)) }
-        let bodyCapture = Self.decodeBody(
-            cappedBody,
-            truncated: (body?.count ?? 0) > configuration.maxBodyBytes
-        )
+        let rawHeaders = (request.allHTTPHeaderFields ?? [:]).mapValues { [$0] }
+        let redactor = configuration.redactor
+        let bodyText: String?
+        if configuration.captureRequestBodies,
+           let data = request.httpBody,
+           data.count <= configuration.maxBodyBytes,
+           Self.isIdentityEncoding(request.value(forHTTPHeaderField: "Content-Encoding")) {
+            bodyText = redactor.redact(body: data, contentType: request.value(forHTTPHeaderField: "Content-Type"))
+        } else {
+            bodyText = nil
+        }
+        let cookieNames = redactor.cookieNames(in: rawHeaders)
         return APITraceRequest(
-            headers: headers,
+            headers: redactor.redact(headers: rawHeaders),
             queryItems: redactedURL.queryItems,
-            bodyText: bodyCapture.text,
-            bodyBase64: bodyCapture.base64
+            bodyText: bodyText,
+            cookieNames: cookieNames.isEmpty ? nil : cookieNames
         )
     }
 
     // MARK: - Helpers
+
+    private static func isIdentityEncoding(_ encoding: String?) -> Bool {
+        guard let encoding else { return true }
+        return encoding.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("identity") == .orderedSame
+    }
 
     private static func normalizeHeaders(_ rawHeaders: [AnyHashable: Any]) -> APITraceHeaders {
         var output: APITraceHeaders = [:]
@@ -181,29 +187,6 @@ final class APITraceURLProtocol: URLProtocol {
 
         return output
     }
-
-    private static func decodeBody(_ data: Data?, truncated: Bool) -> (text: String?, base64: String?) {
-        guard let data, !data.isEmpty else {
-            return (nil, nil)
-        }
-
-        if let text = String(data: data, encoding: .utf8) {
-            return (text, nil)
-        }
-
-        // A byte-limit cut can split a multi-byte UTF-8 character; drop the partial
-        // trailing character instead of misclassifying the body as binary.
-        if truncated {
-            for trim in 1...3 where data.count > trim {
-                if let text = String(data: data.dropLast(trim), encoding: .utf8) {
-                    return (text, nil)
-                }
-            }
-        }
-
-        return (nil, data.base64EncodedString())
-    }
-
 }
 
 // MARK: - Passthrough session delegate
@@ -304,6 +287,7 @@ extension APITraceURLProtocol: URLSessionDataDelegate {
             bodyTruncated: responseBodyBytesSeen > configuration.maxBodyBytes,
             error: error
         )
+        responseBodyPrefix.removeAll()
 
         guard !stopped else { return }
 

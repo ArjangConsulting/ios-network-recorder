@@ -86,7 +86,7 @@ directory) after every recorded exchange. `clear()` rewrites it empty.
 - `APITrace.exportHAR(_:prettyPrinted:)` (export a given list of records)
 - `APITraceHARFile.environmentKey`, `APITraceHARFile.defaultURL`, `APITraceHARFile.url(environment:)`
 - `APITraceConsoleFormatter(maxBodyCharacters:).format(_:)`
-- `APITraceRedactor(headerRules:queryItemRules:responseHeaderRules:replacement:)`
+- `APITraceRedactor(headerRules:queryItemRules:responseHeaderRules:replacement:redact:)`
 - `APITraceDebugBootstrap.install(maxRecords:redactor:maxBodyBytes:captureRequestBodies:captureResponseBodies:)`
 - `APITraceDebugBootstrap.enableCapture(in:)` — opts a custom `URLSessionConfiguration` into capture (no-op variant in `APITraceNoop`)
 
@@ -121,13 +121,13 @@ Each record is one full exchange (request + response/failure):
   "startedAt": "2026-03-05T03:27:10.123Z",
   "durationMs": 84,
   "method": "GET",
-  "url": "https://api.example.com/v1/users?page=1&token=%3Cmocked%3E",
+  "url": "https://api.example.test/v1/users?page=1&token=%5Bredacted%5D",
   "endpoint": "/v1/users",
   "request": {
     "headers": {
       "Authorization": {
         "mode": "includes",
-        "values": ["<mocked>"]
+        "values": ["[redacted]"]
       },
       "X-Client-Build": {
         "mode": "exact",
@@ -141,7 +141,7 @@ Each record is one full exchange (request + response/failure):
       },
       "token": {
         "mode": "includes",
-        "values": ["<mocked>"]
+        "values": ["[redacted]"]
       }
     },
     "bodyText": null,
@@ -159,61 +159,57 @@ Each record is one full exchange (request + response/failure):
 }
 ```
 
-### Header Behavior
+### Credential Redaction
 
-- Request headers are opt-in via `headerRules`.
-- `exact` preserves the original value.
-- `includes` keeps only presence semantics and stores the configured replacement value.
-- Response headers are captured by default, except credential-bearing and redirect headers
-  (`Set-Cookie`, `Set-Cookie2`, `Authorization`, `Proxy-Authenticate`, `WWW-Authenticate`,
-  `Location`, `Content-Location`, `Refresh`), which are replaced with the replacement value.
-  Custom `responseHeaderRules` extend these defaults. Override a default with `exact`
-  (`exact` opts a default back in; `includes` redacts additional headers).
+Both request and response headers and all URL query parameters are captured. Built-in
+credential names and HAR-import extras keep only presence: `[redacted]` in values and
+`%5Bredacted%5D` in URLs and form data. Names match exactly after lowercasing and removing
+`-` and `_`; for example, `api_key`, `apiKey` and `API-KEY` match, while `sort_key` does
+not. A JWT under an unlisted name keeps its header and payload but loses its signature.
+Cookie headers are redacted; HAR cookie entries retain the name and a placeholder value.
 
-### Query Behavior
-
-- Query items are opt-in via `queryItemRules`.
-- Only configured query items remain in the stored `url`.
-- Use `includes` for sensitive items such as `token` when the value should not be persisted.
-
-## Example Configuration
+Pass extra names and exceptions to `APITraceRedactor(redact:)`. The configuration is
+`Codable` and mirrors the `redact` block: `headers`, `query_parameters`, and `except`
+with the same two lists. Query names also apply to form fields and nested JSON keys.
+Exceptions keep the original value, including a JWT. Attempts to except
+`Authorization`, `Proxy-Authorization`, `Cookie`, or `Set-Cookie` are ignored and
+log a warning. Use exceptions only for values safe to share.
 
 ```swift
 APITraceDebugBootstrap.install(
-    maxRecords: 500,
-    maxBodyBytes: 64 * 1024,
     captureRequestBodies: true,
     captureResponseBodies: true,
     redactor: APITraceRedactor(
-        headerRules: [
-            "Authorization": .includes,
-            "X-Client-Build": .exact,
-        ],
-        queryItemRules: [
-            "page": .exact,
-            "token": .includes,
-        ]
+        redact: APITraceRedactionConfiguration(
+            headers: ["X-App-Device"],
+            queryParameters: ["device_ref"],
+            except: .init(headers: ["X-CSRF-Token"], queryParameters: ["token"])
+        )
     )
 )
 ```
+
+Existing `headerRules`, `queryItemRules`, and `responseHeaderRules` can still add
+redactions with `.includes`. An `.exact` rule no longer overrides the credential policy;
+use `except` for an explicit override. The legacy `replacement` argument is accepted for
+source compatibility; capture always writes the HAR-compatible marker.
 
 ## Notes
 
 - Uses `URLProtocol` to intercept HTTP/HTTPS via `URLSession`. Global registration only
   reaches `URLSession.shared`; use `enableCapture(in:)` for custom configurations.
-- Body capture is disabled by default because bodies are stored verbatim with no field-level
-  redaction. Explicitly enable it only for endpoints whose payloads are safe to retain.
-- Enabled bodies are captured as UTF-8 text when possible; otherwise base64, and truncated
-  to `maxBodyBytes` (default 64 KB). Streamed request bodies are forwarded untouched and are
-  not captured because consuming them could alter the upload.
-- Stored URLs always omit user credentials and fragments. Query items remain opt-in.
+- Body capture is off by default. When enabled, only complete UTF-8 JSON and form-encoded
+  payloads within `maxBodyBytes` (default 64 KB) are kept, after redaction. Unsupported,
+  malformed, and partial bodies are omitted. URLSession can present uploads as streams;
+  only requests that reach the recorder with an in-memory body can be captured.
+- Stored URLs omit user information and fragments. Query fields are sanitized in both
+  the request URL and `queryString`, including in captured redirect URL headers.
 - Auth challenges are forwarded to the app's session, so certificate pinning and custom
   trust evaluation keep working while tracing is enabled.
 - Redirects are re-dispatched through the app's session; each hop produces its own record.
-  Redirect headers are redacted by default because they commonly contain authorization codes.
-- Error messages are sanitized: query strings in embedded URLs are stripped before storage.
-- Records live in memory only; exports (`exportJSON`/`exportHAR`) still contain captured
-  response data, so treat exported files as sensitive.
+- Transport failures use a fixed message rather than storing free-form network errors.
+- Treat exports as sensitive: unlisted secrets, excepted values, and JWT payload claims can
+  remain. Records passed directly to `exportHAR(_:prettyPrinted:)` must already be sanitized.
 - Capture only happens between `APITrace.start()` and `APITrace.stop()`.
 
 ## Releases
@@ -226,9 +222,10 @@ An intentional major release requires an explicit `Release-As: X.0.0` commit foo
 ### Capture completeness in HAR exports
 
 New response records carry optional `bodyCapture` metadata. HAR exports preserve it
-as `response._capture`: `capturedByteCount`, `observedByteCount`, `isTruncated`, and
-`isComplete`. `content.size` reflects observed bytes when available. Entry `_error`
-preserves a sanitized transport failure, including cancellation. Consumers must not
+as `response._capture`: `capturedByteCount` counts sanitized bytes retained, and
+`observedByteCount` counts received bytes. `isTruncated` flags an exceeded byte limit;
+`isComplete` is false when a nonempty body could not be kept. `content.size` reflects
+observed bytes for retained bodies. Entry `_error` indicates a transport failure. Consumers must not
 replay captures marked incomplete as successful responses. Missing metadata on older
 or Android exports means unknown completeness, not a guarantee of completeness.
 These additive fields do not change HAR 1.2 compatibility.

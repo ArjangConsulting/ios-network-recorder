@@ -63,7 +63,6 @@ final class APITraceHARFileWriter {
 
     private func write() {
         let records = snapshot()
-        let fileName = url.lastPathComponent
         do {
             let data = try APITrace.exportHAR(records, prettyPrinted: false)
             try FileManager.default.createDirectory(
@@ -71,13 +70,13 @@ final class APITraceHARFileWriter {
             )
             try data.write(to: url, options: .atomic)
             Self.logger.debug(
-                "Wrote \(records.count, privacy: .public) exchange(s), \(data.count, privacy: .public) bytes to \(fileName, privacy: .public)"
+                "Wrote \(records.count, privacy: .public) exchange(s), \(data.count, privacy: .public) bytes"
             )
         } catch {
             // Export is best effort: a failed write is logged and never affects the app's own traffic.
             let nsError = error as NSError
             Self.logger.error(
-                "Failed to write \(fileName, privacy: .public) with \(records.count, privacy: .public) exchange(s): \(nsError.domain, privacy: .public) \(nsError.code, privacy: .public) \(nsError.localizedDescription, privacy: .private)"
+                "Failed to write \(records.count, privacy: .public) exchange(s): error \(nsError.code, privacy: .public)"
             )
         }
     }
