@@ -24,17 +24,17 @@ struct APITraceRedactorTests {
         ])
 
         #expect(headers.count == 3)
-        #expect(headers["Authorization"] == APITraceCapturedField(mode: .includes, values: ["<mocked>"]))
+        #expect(headers["Authorization"] == APITraceCapturedField(mode: .includes, values: ["[redacted]"]))
         #expect(headers["X-Trace-Id"] == APITraceCapturedField(mode: .exact, values: ["trace-123"]))
         #expect(headers["Accept"] == APITraceCapturedField(mode: .exact, values: ["application/json"]))
 
         let url = try #require(URL(string: "https://api.example.com/v1/users?page=1&token=secret&token=backup&ignored=true"))
         let redactedURL = redactor.redact(url: url)
 
-        #expect(redactedURL.url == "https://api.example.com/v1/users?page=1&token=%3Cmocked%3E&token=%3Cmocked%3E")
+        #expect(redactedURL.url == "https://api.example.com/v1/users?page=1&token=%5Bredacted%5D&token=%5Bredacted%5D&ignored=true")
         #expect(redactedURL.queryItems["page"] == APITraceCapturedField(mode: .exact, values: ["1"]))
-        #expect(redactedURL.queryItems["token"] == APITraceCapturedField(mode: .includes, values: ["<mocked>", "<mocked>"]))
-        #expect(redactedURL.queryItems["ignored"] == nil)
+        #expect(redactedURL.queryItems["token"] == APITraceCapturedField(mode: .includes, values: ["[redacted]", "[redacted]"]))
+        #expect(redactedURL.queryItems["ignored"]?.values == ["true"])
     }
 
     @Test("Response headers are captured by default with sensitive defaults redacted")
@@ -49,18 +49,19 @@ struct APITraceRedactorTests {
         ])
 
         #expect(headers["Content-Type"] == ["application/json"])
-        #expect(headers["set-cookie"] == ["<mocked>", "<mocked>"])
-        #expect(headers["WWW-Authenticate"] == ["<mocked>"])
+        #expect(headers["set-cookie"] == ["[redacted]", "[redacted]"])
+        #expect(headers["WWW-Authenticate"] == ["[redacted]"])
         #expect(headers["X-Request-Id"] == ["req-42"])
     }
 
-    @Test("Response header rules can opt sensitive headers back in or add new ones")
+    @Test("Legacy rules can add sensitive headers but exact cannot bypass redaction")
     func responseHeaderRulesAreOverridable() {
         let redactor = APITraceRedactor(
             responseHeaderRules: [
                 "Set-Cookie": .exact,
                 "X-Internal-Token": .includes,
-            ]
+            ],
+            replacement: "<legacy>"
         )
 
         let headers = redactor.redact(responseHeaders: [
@@ -69,22 +70,21 @@ struct APITraceRedactorTests {
             "WWW-Authenticate": ["Bearer secret"],
         ])
 
-        #expect(headers["Set-Cookie"] == ["session=abc123"])
-        #expect(headers["X-Internal-Token"] == ["<mocked>"])
-        #expect(headers["WWW-Authenticate"] == ["<mocked>"])
+        #expect(headers["Set-Cookie"] == ["[redacted]"])
+        #expect(headers["X-Internal-Token"] == ["[redacted]"])
+        #expect(headers["WWW-Authenticate"] == ["[redacted]"])
     }
 
-    @Test("Error messages have URL query strings stripped")
-    func errorMessagesLoseQueryStrings() {
+    @Test("Free-form error details are not retained")
+    func errorDetailsAreOmitted() {
         let redactor = APITraceRedactor.default
 
         let sanitized = redactor.redact(
             errorMessage: "Could not connect to https://api.example.com/v1/users?token=secret&page=1."
         )
-        #expect(sanitized == "Could not connect to https://api.example.com/v1/users")
+        #expect(sanitized == "Network request failed")
 
-        let untouched = redactor.redact(errorMessage: "The request timed out. Retry? Yes/no")
-        #expect(untouched == "The request timed out. Retry? Yes/no")
+        #expect(redactor.redact(errorMessage: "The request timed out. Retry? Yes/no") == sanitized)
     }
 
     @Test("Default redactor preserves request metadata")
@@ -95,14 +95,15 @@ struct APITraceRedactorTests {
             "Authorization": "Bearer secret-token",
             "X-Trace-Id": "trace-123",
         ])
-        #expect(headers["Authorization"] == APITraceCapturedField(mode: .exact, values: ["Bearer secret-token"]))
+        #expect(headers["Authorization"] == APITraceCapturedField(mode: .includes, values: ["[redacted]"]))
         #expect(headers["X-Trace-Id"] == APITraceCapturedField(mode: .exact, values: ["trace-123"]))
 
         let url = try #require(URL(string: "https://api.example.com/v1/users?page=1&token=secret"))
         let redactedURL = redactor.redact(url: url)
 
-        #expect(redactedURL.url == "https://api.example.com/v1/users")
-        #expect(redactedURL.queryItems.isEmpty)
+        #expect(redactedURL.url == "https://api.example.com/v1/users?page=1&token=%5Bredacted%5D")
+        #expect(redactedURL.queryItems["page"]?.values == ["1"])
+        #expect(redactedURL.queryItems["token"]?.values == ["[redacted]"])
     }
 
     @Test("URL credentials and fragments are always removed")

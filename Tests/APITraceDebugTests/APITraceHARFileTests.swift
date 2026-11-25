@@ -26,6 +26,81 @@ struct APITraceHARFileTests {
 /// Capture goes through process-global URLProtocol state, so this joins the serialized
 /// lifecycle suite instead of running beside it.
 extension APITraceURLSessionBackendTests {
+    @Test("Automatic HAR writes contain only sanitized capture")
+    func harFileExcludesCredentials() async throws {
+        let secret = "example-secret-8297"
+        let json = #"{"items":[{"password":"\#(secret)","author":"pilot","note":"eyJhbGci.eyJzdWIi.\#(secret)"}]}"#
+        let server = LoopbackHTTPServer(routes: [
+            "/exchange": .init(headers: [
+                "Content-Type: application/json",
+                "Set-Cookie: first=\(secret); Expires=Wed, 21 Oct 2030 07:28:00 GMT, second=\(secret); HttpOnly",
+                "X-Goog-Api-Key: \(secret)",
+                "Content-Location: /next?state=\(secret)",
+            ], body: json),
+        ])
+        let port = try server.start()
+        defer { server.stop() }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let har = directory.appendingPathComponent("trace.har")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let backend = APITraceURLSessionBackend(captureRequestBodies: true, captureResponseBodies: true, harFileURL: har)
+        backend.start()
+        defer { backend.stop() }
+
+        let config = URLSessionConfiguration.ephemeral
+        APITraceDebugBootstrap.enableCapture(in: config)
+        let url = try #require(URL(string: "http://127.0.0.1:\(port)/exchange?API_KEY=\(secret)&keyword=telescope"))
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = Data("client_secret=\(secret)&author=pilot".utf8)
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("first=\(secret); second=\(secret)", forHTTPHeaderField: "Cookie")
+        request.setValue("session-42", forHTTPHeaderField: "X-Session-Ref")
+        let (data, _) = try await URLSession(configuration: config).data(for: request)
+        #expect(String(decoding: data, as: UTF8.self) == json)
+        backend.flushHARFile()
+
+        let record = try #require(backend.records().first)
+        #expect(!String(decoding: try JSONEncoder().encode(record), as: UTF8.self).contains(secret))
+        #expect(!String(decoding: try Data(contentsOf: har), as: UTF8.self).contains(secret))
+        let entries = try Self.harEntries(at: har)
+        let entry = try #require(entries.first)
+        let capturedRequest = try #require(entry["request"] as? [String: Any])
+        let capturedResponse = try #require(entry["response"] as? [String: Any])
+        #expect((capturedRequest["url"] as? String)?.hasSuffix("API_KEY=%5Bredacted%5D&keyword=telescope") == true)
+        let query = try #require(capturedRequest["queryString"] as? [[String: String]])
+        #expect(query.contains(["name": "API_KEY", "value": "[redacted]"]))
+        for message in [capturedRequest, capturedResponse] {
+            #expect(message["cookies"] as? [[String: String]] == [
+                ["name": "first", "value": "[redacted]"], ["name": "second", "value": "[redacted]"],
+            ])
+        }
+        let content = try #require(capturedResponse["content"] as? [String: Any])
+        #expect(content["text"] as? String ==
+            #"{"items":[{"author":"pilot","note":"eyJhbGci.eyJzdWIi.redacted","password":"[redacted]"}]}"#)
+    }
+
+    @Test("In-memory request bodies are sanitized before entering trace history")
+    func inMemoryRequestBodyIsSanitized() throws {
+        let secret = "example-secret-8297"
+        let bytes = Data("client_secret=\(secret)&author=pilot".utf8)
+        let url = try #require(URL(string: "https://api.example.test/"))
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = bytes
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let configuration = APITraceURLProtocolContext.Configuration(
+            recorder: APITraceRecorder(maxRecords: 1), redactor: .default, maxBodyBytes: 1024,
+            captureRequestBodies: true, captureResponseBodies: false
+        )
+        let payload = APITraceURLProtocol.makeRequestPayload(
+            from: request, redactedURL: configuration.redactor.redact(url: url), configuration: configuration
+        )
+        #expect(payload.bodyText == "client_secret=%5Bredacted%5D&author=pilot")
+        #expect(request.httpBody == bytes)
+    }
+
     @Test("A captured exchange is written to the HAR file, and clear() empties it")
     func capturedExchangeIsWrittenToHARFile() async throws {
         let server = LoopbackHTTPServer()

@@ -44,6 +44,7 @@ public enum APITrace {
     }
 
     /// Exports the given records as a HAR 1.2 archive, independent of the installed backend.
+    /// Caller-supplied records must already be sanitized.
     public static func exportHAR(_ records: [APITraceRecord], prettyPrinted: Bool = true) throws -> Data {
         try harData(for: records, prettyPrinted: prettyPrinted)
     }

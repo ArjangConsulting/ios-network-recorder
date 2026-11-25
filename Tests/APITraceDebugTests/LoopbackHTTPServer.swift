@@ -84,15 +84,18 @@ final class LoopbackHTTPServer {
         var buffer = [UInt8](repeating: 0, count: 16 * 1024)
         let received = recv(clientSocket, &buffer, buffer.count, 0)
         let requestText = received > 0 ? String(decoding: buffer[0..<received], as: UTF8.self) : ""
-        let path = requestText.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
+        let path = requestText.split(separator: " ").dropFirst().first?
+            .split(separator: "?", maxSplits: 1).first.map(String.init) ?? "/"
 
         let route = routes[path] ?? Route(body: responseBody)
         var lines = [
             "HTTP/1.1 \(route.status) \(route.reason)",
             "Content-Length: \(route.body.utf8.count)",
-            "Content-Type: text/plain",
             "Connection: close",
         ]
+        if !route.headers.contains(where: { $0.lowercased().hasPrefix("content-type:") }) {
+            lines.append("Content-Type: text/plain")
+        }
         lines.append(contentsOf: route.headers)
 
         let response = lines.joined(separator: "\r\n") + "\r\n\r\n" + route.body

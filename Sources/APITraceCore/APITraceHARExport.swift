@@ -103,7 +103,7 @@ extension HARRequest {
         queryString = record.request.queryItems.flatMap { name, field in
             field.values.map { HARNameValue(name: name, value: $0) }
         }
-        cookies = []
+        cookies = harCookies(record.request.cookieNames)
         headersSize = -1
         bodySize = -1
         let mimeType = harMimeType(
@@ -135,7 +135,7 @@ extension HARResponse {
         headers = response.headers.flatMap { name, values in
             values.map { HARNameValue(name: name, value: $0) }
         }
-        cookies = []
+        cookies = harCookies(response.cookieNames)
         let mimeType = harMimeType(
             fromContentType: firstHeaderValue(named: "Content-Type", in: response.headers)
         )
@@ -171,4 +171,8 @@ private func harMimeType(fromContentType value: String?) -> String {
     value?
         .components(separatedBy: ";").first?
         .trimmingCharacters(in: .whitespaces) ?? ""
+}
+
+private func harCookies(_ names: [String]?) -> [HARNameValue] {
+    (names ?? []).map { HARNameValue(name: $0, value: APITraceCredentialNames.marker) }
 }
