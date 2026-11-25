@@ -80,12 +80,15 @@ final class APITraceURLProtocol: URLProtocol {
         // Per-request session with this protocol as delegate: streams data to the client
         // as it arrives, and forwards redirects and auth challenges (certificate pinning,
         // custom trust) back to the app's own session instead of swallowing them.
+        // A custom protocol replaces the loader that sends and stores cookies, so the
+        // forwarding session takes the originating session's cookie store and settings and
+        // the system handles cookies as it would with capture off, redirect hops included.
         let sessionConfiguration = URLSessionConfiguration.ephemeral
-        sessionConfiguration.httpCookieStorage = nil
         sessionConfiguration.urlCredentialStorage = nil
         sessionConfiguration.urlCache = nil
+        APITraceSessionProfiles.profile(for: object_getClass(self)).apply(to: sessionConfiguration)
         let existing = sessionConfiguration.protocolClasses ?? []
-        sessionConfiguration.protocolClasses = existing.filter { $0 != APITraceURLProtocol.self }
+        sessionConfiguration.protocolClasses = existing.filter { !APITraceSessionProfiles.isCaptureClass($0) }
         let session = URLSession(configuration: sessionConfiguration, delegate: self, delegateQueue: nil)
         passthroughSession = session
 
